@@ -14,10 +14,23 @@ from transformers import AutoProcessor, LlavaForConditionalGeneration, BitsAndBy
 
 
 class AITagger:
-    def __init__(self, model_id: str = "llava-hf/llava-1.5-7b-hf", use_quantization: bool = True, batch_size: int = 15):
+    def __init__(self, model_id: str = "llava-hf/llava-1.5-7b-hf", use_quantization: bool = True, batch_size: int = 15, tagging_prompt: str = None):
         self.model_id = model_id
         self.use_quantization = use_quantization
         self.batch_size = batch_size
+        # Default comprehensive prompt if not provided
+        default_prompt = (
+            "USER: <image>\n"
+            "Analyze the image and generate a single, comprehensive, comma-separated list of keywords, "
+            "listed in their descending importance as a description of the image\n"
+            "Include keywords for: main objects, people (including names of famous figures if recognized), "
+            "actions, location, time of day, lighting, artistic style, mood, fictional characters, memes, "
+            "distinctive features and anything else that seems to be a relevant keyword to search on this image by.\n"
+            "Do not transcribe text. Do not use categories or labels. Just keywords.\n"
+            "Example: car, woman, running, beach, sunny, sketch, vintage, afternoon\n"
+            "ASSISTANT:"
+        )
+        self.tagging_prompt = tagging_prompt or default_prompt
         self.model = None
         self.processor = None
         self.is_loaded = False
@@ -114,20 +127,8 @@ class AITagger:
             if not valid_images:
                 return results
             
-            # 2. Prompts
-            # Reference: tagger_client_v2.py:111-118
-            prompt = (
-                "USER: <image>\n"
-                "Analyze the image and generate a single, comprehensive, comma-separated list of keywords, "
-                "listed in their descending importance as a description of the image\n"
-                "Include keywords for: main objects, people (including names of famous figures if recognized), "
-                "actions, location, time of day, lighting, artistic style, mood, fictional characters, memes, "
-                "distinctive features and anything else that seems to be a relevant keyword to search on this image by.\n"
-                "Do not transcribe text. Do not use categories or labels. Just keywords.\n"
-                "Example: car, woman, running, beach, sunny, sketch, vintage, afternoon\n"
-                "ASSISTANT:"
-            )
-            prompts = [prompt] * len(valid_images)
+            # 2. Prompts - use configured prompt
+            prompts = [self.tagging_prompt] * len(valid_images)
             
             # 3. Tokenize
             # Reference: tagger_client_v2.py:123

@@ -248,6 +248,23 @@
             font-weight: normal;
         }
 
+        .toggle-chips-btn {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #495057;
+            margin-bottom: 10px;
+            transition: all 0.2s;
+        }
+
+        .toggle-chips-btn:hover {
+            background: #e9ecef;
+            border-color: #adb5bd;
+        }
+
         .gallery {
             margin: 0 auto;
             padding: 0 20px;
@@ -469,6 +486,11 @@
     </div>
 
     <!-- Related Tags Filter Chips -->
+    <div style="max-width: 1400px; margin: 0 auto; padding: 0 20px;">
+        <button id="toggleChips" class="toggle-chips-btn" style="display:none;" onclick="toggleTagChips()">
+            <span id="toggleIcon">▼</span> <span id="toggleText">Show Tag Filters</span>
+        </button>
+    </div>
     <div id="relatedTags" class="related-tags" style="display:none;"></div>
 
     <div class="gallery">
@@ -802,6 +824,93 @@
         }
 
         // ===== Tag Filter Chips =====
+
+        // Shared function to attach event handlers to tag chips
+        function attachTagChipHandlers(container, activeState = {}) {
+            function updateState(tag, newState) {
+                const nextState = Object.assign({}, activeState);
+
+                if (newState === 'neutral') delete nextState[tag];
+                else nextState[tag] = newState;
+
+                let finalStr = '';
+                for (const t in nextState) {
+                    let token = t;
+                    if (token.indexOf(' ') > -1) token = '"' + token + '"';
+
+                    if (nextState[t] === 'exclude') finalStr += '-' + token + ' ';
+                    else finalStr += '+' + token + ' ';
+                }
+
+                searchInput.value = finalStr.trim();
+                searchType.value = 'tag';
+                searchInput.form.submit();
+            }
+
+            const chips = container.getElementsByClassName('tag-chip');
+            for (let i = 0; i < chips.length; i++) {
+                chips[i].querySelector('.chip-label').addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    const parent = this.closest('.tag-chip');
+                    const wasExpanded = parent.classList.contains('expanded');
+
+                    const all = container.getElementsByClassName('tag-chip');
+                    for (let j = 0; j < all.length; j++) all[j].classList.remove('expanded');
+
+                    if (!wasExpanded) parent.classList.add('expanded');
+                });
+
+                chips[i].querySelector('.btn-plus').addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    updateState(this.closest('.tag-chip').getAttribute('data-tag'), 'include');
+                });
+
+                chips[i].querySelector('.btn-minus').addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    updateState(this.closest('.tag-chip').getAttribute('data-tag'), 'exclude');
+                });
+
+                chips[i].querySelector('.btn-remove').addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    updateState(this.closest('.tag-chip').getAttribute('data-tag'), 'neutral');
+                });
+            }
+
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.tag-chip')) {
+                    const all = container.getElementsByClassName('tag-chip');
+                    for (let j = 0; j < all.length; j++) all[j].classList.remove('expanded');
+                }
+            });
+        }
+
+        // Load all popular tags (for browsing without search)
+        function loadAllTags() {
+            fetch('/api/tags?limit=30')
+                .then(r => r.json())
+                .then(tags => {
+                    if (tags.length === 0) return;
+
+                    const container = document.getElementById('relatedTags');
+                    let html = '<span style="font-size:12px; color:#adb5bd; align-self:center; margin-right:5px; font-weight:600;">BROWSE TAGS:</span>';
+
+                    tags.forEach(tag => {
+                        html += `<div class="tag-chip" data-tag="${tag}">` +
+                            `<span class="chip-label">${tag}</span>` +
+                            `<span class="chip-btn btn-remove" title="Remove">✕</span>` +
+                            `<span class="chip-btn btn-plus" title="Include">AND</span>` +
+                            `<span class="chip-btn btn-minus" title="Exclude">NOT</span>` +
+                            `</div>`;
+                    });
+
+                    container.innerHTML = html;
+                    container.style.display = 'flex';
+                    attachTagChipHandlers(container, {});
+                })
+                .catch(err => console.error('Error loading tags:', err));
+        }
+
+        // Load related tags (when searching)
         function loadRelatedTags() {
             const query = '{{ search_query|safe }}';
             if (!query || searchType.value !== 'tag') return;
@@ -874,79 +983,81 @@
                     container.innerHTML = html;
                     container.style.display = 'flex';
 
-                    // 5. Add event handlers
-                    function updateState(tag, newState) {
-                        const nextState = Object.assign({}, activeState);
-
-                        if (newState === 'neutral') delete nextState[tag];
-                        else nextState[tag] = newState;
-
-                        let finalStr = '';
-                        for (const t in nextState) {
-                            let token = t;
-                            if (token.indexOf(' ') > -1) token = '"' + token + '"';
-
-                            if (nextState[t] === 'exclude') finalStr += '-' + token + ' ';
-                            else finalStr += '+' + token + ' ';
-                        }
-
-                        searchInput.value = finalStr.trim();
-                        searchInput.form.submit();
-                    }
-
-                    const chips = container.getElementsByClassName('tag-chip');
-                    for (let i = 0; i < chips.length; i++) {
-                        // Label click -> toggle expand
-                        chips[i].querySelector('.chip-label').addEventListener('click', function (e) {
-                            e.stopPropagation();
-                            const parent = this.closest('.tag-chip');
-                            const wasExpanded = parent.classList.contains('expanded');
-
-                            // Close all others
-                            const all = container.getElementsByClassName('tag-chip');
-                            for (let j = 0; j < all.length; j++) {
-                                all[j].classList.remove('expanded');
-                            }
-
-                            if (!wasExpanded) parent.classList.add('expanded');
-                        });
-
-                        // Plus (AND)
-                        chips[i].querySelector('.btn-plus').addEventListener('click', function (e) {
-                            e.stopPropagation();
-                            updateState(this.closest('.tag-chip').getAttribute('data-tag'), 'include');
-                        });
-
-                        // Minus (NOT)
-                        chips[i].querySelector('.btn-minus').addEventListener('click', function (e) {
-                            e.stopPropagation();
-                            updateState(this.closest('.tag-chip').getAttribute('data-tag'), 'exclude');
-                        });
-
-                        // Remove (Clear)
-                        chips[i].querySelector('.btn-remove').addEventListener('click', function (e) {
-                            e.stopPropagation();
-                            updateState(this.closest('.tag-chip').getAttribute('data-tag'), 'neutral');
-                        });
-                    }
-
-                    // Global click -> close all
-                    document.addEventListener('click', (e) => {
-                        if (!e.target.closest('.tag-chip')) {
-                            const all = container.getElementsByClassName('tag-chip');
-                            for (let j = 0; j < all.length; j++) {
-                                all[j].classList.remove('expanded');
-                            }
-                        }
-                    });
+                    // Use shared handler attachment
+                    attachTagChipHandlers(container, activeState);
                 })
                 .catch(err => console.error('Error loading related tags:', err));
         }
 
-        // Run if searching
+        // Load browse tags on page load (populate chips but keep hidden)
+        loadCurrentViewTags();
+
+        // If searching, update with related tags and auto-reveal
         if ('{{ search_query }}') {
             loadRelatedTags();
+            // Auto-reveal chips when user has searched
+            setTimeout(() => {
+                document.getElementById('relatedTags').style.display = 'flex';
+                document.getElementById('toggleIcon').textContent = '▲';
+                document.getElementById('toggleText').textContent = 'Hide Tag Filters';
+            }, 100);
         }
+
+        // ===== Drag-and-Drop Upload =====
+        const galleryEl = document.querySelector('.gallery');
+        let dragCounter = 0;
+
+        // Prevent default drag behavior
+        document.addEventListener('dragover', (e) => e.preventDefault());
+        document.addEventListener('dragenter', (e) => e.preventDefault());
+
+        // Visual feedback when dragging over gallery
+        galleryEl.addEventListener('dragenter', (e) => {
+            dragCounter++;
+            galleryEl.style.opacity = '0.5';
+            galleryEl.style.outline = '3px dashed #007bff';
+        });
+
+        galleryEl.addEventListener('dragleave', (e) => {
+            dragCounter--;
+            if (dragCounter === 0) {
+                galleryEl.style.opacity = '1';
+                galleryEl.style.outline = 'none';
+            }
+        });
+
+        // Handle drop
+        galleryEl.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            dragCounter = 0;
+            galleryEl.style.opacity = '1';
+            galleryEl.style.outline = 'none';
+
+            const formData = new FormData();
+            let hasImages = false;
+
+            for (const file of e.dataTransfer.files) {
+                if (file.type.startsWith('image/')) {
+                    formData.append('files', file);
+                    hasImages = true;
+                }
+            }
+
+            if (hasImages) {
+                try {
+                    const response = await fetch('/api/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await response.json();
+                    console.log(`Uploaded ${data.count} photos`);
+                    // File monitor will detect → auto-refresh
+                } catch (err) {
+                    console.error('Upload error:', err);
+                    alert('Error uploading photos');
+                }
+            }
+        });
 
         // ===== Auto-Refresh on File Changes =====
         let initialFileCount = {{ total_files }};

@@ -72,7 +72,8 @@ def get_ai_tagger():
         ai_tagger = AITagger(
             model_id=config['ai']['model'],
             use_quantization=config['ai']['use_quantization'],
-            batch_size=config['ai']['batch_size']
+            batch_size=config['ai']['batch_size'],
+            tagging_prompt=config['ai'].get('tagging_prompt')
         )
     return ai_tagger
 
@@ -380,6 +381,33 @@ def api_delete():
         return jsonify({'status': 'ok'})
     else:
         return jsonify({'error': 'Failed to delete'}), 500
+
+
+@app.route('/api/upload', methods=['POST'])
+def api_upload():
+    """Handle photo uploads via drag-and-drop"""
+    if 'files' not in request.files:
+        return jsonify({'error': 'No files provided'}), 400
+    
+    files = request.files.getlist('files')
+    uploaded = []
+    
+    for file in files:
+        if file.filename == '':
+            continue
+        
+        # Check if allowed extension
+        ext = os.path.splitext(file.filename)[1].lower().lstrip('.')
+        if ext not in config['gallery']['allowed_extensions']:
+            continue
+        
+        # Save to photos directory
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(config['gallery']['photo_dir'], filename)
+        file.save(filepath)
+        uploaded.append(filename)
+    
+    return jsonify({'status': 'ok', 'uploaded': uploaded, 'count': len(uploaded)})
 
 
 # --- MANUAL TAGGING STATE ---
