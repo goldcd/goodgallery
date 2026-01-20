@@ -539,6 +539,12 @@ def auto_tag_on_startup():
     """Auto-tag untagged images on startup (runs in background)"""
     import time
     
+    # GUARD: Don't run in Flask's reloader parent process
+    # When debug=True, Flask spawns a parent + child process. 
+    # We only want to load the model in the actual worker process.
+    if os.environ.get('WERKZEUG_RUN_MAIN') != 'true' and app.debug:
+        return  # Skip in parent reloader process
+    
     # Wait a moment for server to start
     time.sleep(2)
     
@@ -636,4 +642,4 @@ def run_server(host='127.0.0.1', port=None, debug=False):
 
 
 if __name__ == '__main__':
-    run_server(debug=True)
+    run_server(debug=False)
