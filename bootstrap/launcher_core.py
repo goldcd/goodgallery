@@ -20,6 +20,16 @@ class BootstrapManager:
         self.runtime_dir = self.root_dir / "runtime"
         self.photos_dir = self.root_dir / "photos"
         self.config_file = self.root_dir / "config.yaml"
+        self.kill_zombie_processes()
+
+    def kill_zombie_processes(self):
+        """Force kill existing instances to prevent shared memory issues"""
+        print("[*] Ensuring single instance - checking for zombies...")
+        import os
+        current_pid = os.getpid()
+        # Kill other python processes running GoodGallery
+        cmd = f'wmic process where "CommandLine like \'%GoodGallery%\' and Name=\'python.exe\' and ProcessId!={current_pid}" call terminate'
+        subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     
     def print_banner(self):
         """Print welcome banner"""
@@ -70,7 +80,18 @@ class BootstrapManager:
         print(f"   Installing from: {requirements_file}\n")
         
         try:
-            # Install requirements using current Python (the embedded one)
+            # 1. Install PyTorch with CUDA support explicitly
+            print("   Installing PyTorch with CUDA support...")
+            subprocess.check_call([
+                sys.executable, "-m", "pip", "install", 
+                "torch", "torchvision", "torchaudio",
+                "--index-url", "https://download.pytorch.org/whl/cu121",
+                "--no-warn-script-location"
+            ])
+
+
+            # 2. Install remaining requirements
+            print("   Installing other dependencies...")
             subprocess.check_call([
                 sys.executable, "-m", "pip", "install", 
                 "--no-warn-script-location",

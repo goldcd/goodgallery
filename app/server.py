@@ -13,7 +13,7 @@ if __name__ == '__main__':
 import yaml
 from flask import Flask, render_template, request, jsonify, send_file, abort
 from werkzeug.utils import secure_filename
-from urllib.parse import unquote
+from urllib.parse import unquote, quote
 
 from app.database import Database
 from app.gallery import Gallery
@@ -141,6 +141,16 @@ def serve_thumbnail(filename):
         except:
             pass
             
+    # Retry with ENCODED filename if not found (e.g. space -> %20)
+    # This handles files that actually have %20 in their name on disk
+    if not thumb_path:
+        try:
+            encoded_name = quote(filename)
+            if encoded_name != filename:
+                 thumb_path = thumbs.get_or_create(encoded_name)
+        except:
+            pass
+            
     if thumb_path and os.path.exists(thumb_path):
         return send_file(thumb_path)
     
@@ -158,6 +168,16 @@ def serve_thumbnail(filename):
                 return send_file(original_path)
         except:
             pass
+            
+    # Retry original with ENCODED filename
+    try:
+        encoded_name = quote(filename)
+        if encoded_name != filename:
+            original_path = os.path.normpath(os.path.join(gallery.photo_dir, encoded_name))
+            if os.path.exists(original_path):
+                return send_file(original_path)
+    except:
+        pass
     
     abort(404)
 
