@@ -70,14 +70,15 @@ class BootstrapManager:
         print(f"   Installing from: {requirements_file}\n")
         
         try:
-            # 1. Install PyTorch with CUDA support explicitly
+            # 1. Install PyTorch with CUDA support explicitly (matching reference venv versions)
             print("   Installing PyTorch with CUDA support...")
             subprocess.check_call([
                 sys.executable, "-m", "pip", "install", 
-                "torch", "torchvision", "torchaudio",
+                "torch==2.5.1", "torchvision==0.20.1", "torchaudio==2.5.1",
                 "--index-url", "https://download.pytorch.org/whl/cu121",
                 "--no-warn-script-location"
             ])
+
 
 
             # 2. Install remaining requirements

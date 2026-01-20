@@ -1,8 +1,10 @@
-Flask==3.0.0
-PyYAML==6.0.3
-requests==2.32.5
+Flask>=3.0.0
+PyYAML>=6.0.0
+requests>=2.32.0
 watchdog>=4.0.0
-# AI Tagging
+
+# AI Tagging - Exact versions from working C:\venv_tagger_v2
+# NOTE: torch is installed separately with CUDA in launcher_core.py
 transformers==4.57.3
 accelerate==1.12.0
 bitsandbytes==0.49.1
@@ -11,3 +13,6 @@ pillow==12.1.0
 regex==2025.11.3
 tokenizers==0.22.2
 safetensors==0.7.0
+huggingface-hub==0.36.0
+psutil==7.2.1
+tqdm==4.67.1
