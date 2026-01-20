@@ -1,9 +1,8 @@
 """
 GoodGallery Bootstrap Core
 Intelligent setup and launcher that handles:
-- Creating venv
+- Installing dependencies into embedded Python
 - Downloading LLaVA model
-- Installing dependencies
 - Launching the application
 """
 
@@ -17,19 +16,10 @@ from pathlib import Path
 class BootstrapManager:
     def __init__(self):
         self.root_dir = Path(__file__).parent.parent.absolute()
-        self.venv_dir = self.root_dir / "venv"
         self.models_dir = self.root_dir / "models"
         self.runtime_dir = self.root_dir / "runtime"
         self.photos_dir = self.root_dir / "photos"
         self.config_file = self.root_dir / "config.yaml"
-        
-        # Determine venv python executable
-        if sys.platform == "win32":
-            self.venv_python = self.venv_dir / "Scripts" / "python.exe"
-            self.venv_pip = self.venv_dir / "Scripts" / "pip.exe"
-        else:
-            self.venv_python = self.venv_dir / "bin" / "python"
-            self.venv_pip = self.venv_dir / "bin" / "pip"
     
     def print_banner(self):
         """Print welcome banner"""
@@ -39,8 +29,17 @@ class BootstrapManager:
     
     def check_setup_complete(self):
         """Check if initial setup is complete"""
+        # Check if dependencies are installed
+        try:
+            import flask
+            import PIL
+            import yaml
+            deps_installed = True
+        except ImportError:
+            deps_installed = False
+        
         checks = {
-            "Virtual environment": self.venv_python.exists(),
+            "Dependencies installed": deps_installed,
             "Configuration file": self.config_file.exists(),
             "Models directory": (self.models_dir / "llava").exists(),
         }
@@ -58,24 +57,8 @@ class BootstrapManager:
             print()
             return False
     
-    def create_venv(self):
-        """Create virtual environment"""
-        if self.venv_dir.exists():
-            print("✓ Virtual environment already exists\n")
-            return
-        
-        print("📦 Creating virtual environment...")
-        print(f"   Location: {self.venv_dir}")
-        
-        try:
-            subprocess.check_call([sys.executable, "-m", "venv", str(self.venv_dir)])
-            print("✓ Virtual environment created\n")
-        except subprocess.CalledProcessError as e:
-            print(f"❌ Failed to create virtual environment: {e}")
-            sys.exit(1)
-    
     def install_dependencies(self):
-        """Install Python dependencies into venv"""
+        """Install Python dependencies directly into embedded Python"""
         requirements_file = self.root_dir / "requirements.txt"
         
         if not requirements_file.exists():
@@ -87,22 +70,17 @@ class BootstrapManager:
         print(f"   Installing from: {requirements_file}\n")
         
         try:
-            # Upgrade pip first
-            subprocess.check_call(
-                [str(self.venv_python), "-m", "pip", "install", "--upgrade", "pip"],
-                stdout=subprocess.DEVNULL
-            )
-            
-            # Install requirements with progress
+            # Install requirements using current Python (the embedded one)
             subprocess.check_call([
-                str(self.venv_python), "-m", "pip", "install", 
+                sys.executable, "-m", "pip", "install", 
+                "--no-warn-script-location",
                 "-r", str(requirements_file)
             ])
             
             print("\n✓ Python packages installed\n")
         except subprocess.CalledProcessError as e:
             print(f"\n❌ Failed to install dependencies: {e}")
-            print("   Try running manually: venv/Scripts/pip install -r requirements.txt")
+            print(f"   Try running manually: {sys.executable} -m pip install -r requirements.txt")
             sys.exit(1)
     
     def download_llava_model(self):
@@ -121,7 +99,7 @@ class BootstrapManager:
         llava_dir.mkdir(parents=True, exist_ok=True)
         
         try:
-            # Use the venv python to ensure transformers is available
+            # Use current Python to download
             download_script = f"""
 import sys
 from transformers import AutoProcessor, LlavaForConditionalGeneration
@@ -149,7 +127,7 @@ print("\\n   Model downloaded successfully!")
 """
             
             result = subprocess.run(
-                [str(self.venv_python), "-c", download_script],
+                [sys.executable, "-c", download_script],
                 check=True,
                 capture_output=False
             )
@@ -245,15 +223,11 @@ print("\\n   Model downloaded successfully!")
         print("   Server will start at: http://localhost:5000")
         print("   Press Ctrl+C to stop\n")
         
-        # Launch using venv python
+        # Launch using current Python (embedded)
         try:
-            # Set PYTHONPATH to include app directory
-            env = os.environ.copy()
-            env['PYTHONPATH'] = str(self.root_dir)
-            
+            app_main = self.root_dir / "app" / "server.py"
             subprocess.run(
-                [str(self.venv_python), str(app_main)],
-                env=env,
+                [sys.executable, str(app_main)],
                 cwd=str(self.root_dir)
             )
         except KeyboardInterrupt:
@@ -274,7 +248,6 @@ print("\\n   Model downloaded successfully!")
         
         self.create_photos_directory()
         self.create_default_config()
-        self.create_venv()
         self.install_dependencies()
         self.download_llava_model()
         

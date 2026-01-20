@@ -23,25 +23,24 @@ detect_platform() {
     
     case "$os" in
         Darwin)
-            PLATFORM="apple-darwin"
-            PYTHON_EXE="$PYTHON_DIR/bin/python3"
-            
+            echo "[*] Platform: macOS"
             if [ "$arch" = "arm64" ]; then
-                PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20240107/cpython-3.11.9+20240107-aarch64-apple-darwin-install_only.tar.gz"
+                PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20240814/cpython-3.11.9%2B20240814-aarch64-apple-darwin-install_only_stripped.tar.gz"
             else
-                PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20240107/cpython-3.11.9+20240107-x86_64-apple-darwin-install_only.tar.gz"
+                PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20240814/cpython-3.11.9%2B20240814-x86_64-apple-darwin-install_only_stripped.tar.gz"
             fi
             ;;
         Linux)
-            PLATFORM="unknown-linux-gnu"
-            PYTHON_EXE="$PYTHON_DIR/bin/python3"
-            PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20240107/cpython-3.11.9+20240107-x86_64-unknown-linux-gnu-install_only.tar.gz"
+            echo "[*] Platform: Linux"
+            PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20240814/cpython-3.11.9%2B20240814-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
             ;;
         *)
             echo "[ERROR] Unsupported OS: $os"
             exit 1
             ;;
     esac
+    
+    PYTHON_EXE="$PYTHON_DIR/bin/python3"
 }
 
 # Check if portable Python exists

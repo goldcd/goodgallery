@@ -34,8 +34,8 @@ if not exist "%RUNTIME_DIR%" mkdir "%RUNTIME_DIR%"
 
 REM Download using PowerShell
 echo [*] Downloading Python 3.11.9 (Windows x64)...
-set "PYTHON_URL=https://github.com/indygreg/python-build-standalone/releases/download/20240107/cpython-3.11.9+20240107-x86_64-pc-windows-msvc-shared-install_only.tar.gz"
-set "PYTHON_ARCHIVE=%RUNTIME_DIR%\python.tar.gz"
+set "PYTHON_URL=https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip"
+set "PYTHON_ARCHIVE=%RUNTIME_DIR%\python.zip"
 
 powershell -Command "& {[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%PYTHON_URL%' -OutFile '%PYTHON_ARCHIVE%' -UseBasicParsing}"
 
@@ -50,32 +50,28 @@ if errorlevel 1 (
 echo [*] Download complete
 echo.
 
-REM Extract using PowerShell tar (Windows 10+) or 7-zip fallback
+REM Extract using PowerShell
 echo [*] Extracting Python...
+powershell -Command "& {Expand-Archive -Path '%PYTHON_ARCHIVE%' -DestinationPath '%PYTHON_DIR%' -Force}"
 
-REM Try Windows built-in tar first (Windows 10 1803+)
-where tar >nul 2>&1
-if %errorlevel% equ 0 (
-    tar -xzf "%PYTHON_ARCHIVE%" -C "%RUNTIME_DIR%"
-    if errorlevel 1 (
-        echo [ERROR] Extraction failed
-        pause
-        exit /b 1
-    )
-) else (
-    REM Fallback to PowerShell extraction
-    powershell -Command "& {Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory('%PYTHON_ARCHIVE%', '%RUNTIME_DIR%')}"
-)
-
-REM Rename extracted directory to expected name
-for /d %%d in ("%RUNTIME_DIR%\python*") do (
-    if not "%%d"=="%PYTHON_DIR%" (
-        move "%%d" "%PYTHON_DIR%" >nul 2>&1
-    )
+if errorlevel 1 (
+    echo [ERROR] Extraction failed
+    pause
+    exit /b 1
 )
 
 REM Clean up archive
 del "%PYTHON_ARCHIVE%" >nul 2>&1
+
+REM Install pip into embedded Python
+echo [*] Installing pip...
+powershell -Command "& {Invoke-WebRequest -Uri 'https://bootstrap.pypa.io/get-pip.py' -OutFile '%PYTHON_DIR%\get-pip.py' -UseBasicParsing}"
+"%PYTHON_DIR%\python.exe" "%PYTHON_DIR%\get-pip.py" --no-warn-script-location
+
+REM Enable site-packages by removing import restriction
+echo [*] Configuring Python...
+powershell -Command "& {(Get-Content '%PYTHON_DIR%\python311._pth') -replace '#import site', 'import site' | Set-Content '%PYTHON_DIR%\python311._pth'}"
+
 
 if exist "%PYTHON_EXE%" (
     echo [*] Python extracted successfully

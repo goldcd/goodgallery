@@ -4,15 +4,21 @@ Main web application
 """
 
 import os
+import sys
+
+# Add parent directory to path for direct execution
+if __name__ == '__main__':
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import yaml
 from flask import Flask, render_template, request, jsonify, send_file, abort
 from werkzeug.utils import secure_filename
 
-from .database import Database
-from .gallery import Gallery
-from .thumbnails import ThumbnailGenerator
-from .ai_tagger import AITagger
-from .file_monitor import start_file_watcher
+from app.database import Database
+from app.gallery import Gallery
+from app.thumbnails import ThumbnailGenerator
+from app.ai_tagger import AITagger
+from app.file_monitor import start_file_watcher
 
 
 # Load configuration
@@ -117,7 +123,7 @@ def serve_thumbnail(filename):
         return send_file(thumb_path)
     
     # Fallback to original if thumbnail fails
-    original_path = os.path.join(gallery.photo_dir, filename)
+    original_path = os.path.normpath(os.path.join(gallery.photo_dir, filename))
     if os.path.exists(original_path):
         return send_file(original_path)
     
@@ -261,7 +267,7 @@ def api_tag_batch():
             return jsonify({'error': f'Failed to load model: {str(e)}'}), 500
     
     # Build full paths
-    image_paths = [os.path.join(gallery.photo_dir, f) for f in filenames]
+    image_paths = [os.path.normpath(os.path.join(gallery.photo_dir, f)) for f in filenames]
     
     # Tag images
     try:
@@ -423,7 +429,7 @@ def manual_tagging_worker():
                     break
             
             batch = untagged[i:i+batch_size]
-            image_paths = [os.path.join(gallery.photo_dir, f) for f in batch]
+            image_paths = [os.path.normpath(os.path.join(gallery.photo_dir, f)) for f in batch]
             
             # Update status
             with tagging_lock:
@@ -502,7 +508,7 @@ def auto_tag_on_startup():
         
         for i in range(0, total, batch_size):
             batch = untagged[i:i+batch_size]
-            image_paths = [os.path.join(gallery.photo_dir, f) for f in batch]
+            image_paths = [os.path.normpath(os.path.join(gallery.photo_dir, f)) for f in batch]
             
             # Tag batch
             results = tagger.tag_batch(image_paths)
