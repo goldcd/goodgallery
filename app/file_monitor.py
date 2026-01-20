@@ -29,6 +29,18 @@ class PhotoDirectoryWatcher(FileSystemEventHandler):
         """Check if file is a valid image"""
         if not os.path.isfile(path):
             return False
+            
+        filename = os.path.basename(path)
+        # Skip hidden files and Mac metadata
+        if filename.startswith('.') or filename.startswith('._'):
+            return False
+        
+        try:
+            # Skip zero-byte files
+            if os.path.getsize(path) == 0:
+                return False
+        except OSError:
+            return False
         
         ext = Path(path).suffix.lower().lstrip('.')
         return ext in self.allowed_extensions

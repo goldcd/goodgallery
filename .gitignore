@@ -40,3 +40,6 @@ desktop.ini
 
 # Logs
 *.log
+
+# Test environment
+test/

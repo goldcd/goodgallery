@@ -82,6 +82,10 @@ class Gallery:
                 if filename in known_files:
                     continue
                 
+                # Skip hidden files and Mac metadata
+                if filename.startswith('.') or filename.startswith('._'):
+                    continue
+                
                 # Check extension
                 ext = os.path.splitext(filename)[1].lower().lstrip('.')
                 if ext not in self.allowed_extensions:
@@ -90,6 +94,14 @@ class Gallery:
                 # Get full path
                 file_path = os.path.join(self.photo_dir, filename)
                 
+                # Validation: Skip zero-byte files
+                try:
+                    stats = os.stat(file_path)
+                    if stats.st_size == 0:
+                        continue
+                except OSError:
+                    continue
+                
                 # Skip directories
                 if os.path.isdir(file_path):
                     continue
@@ -97,7 +109,7 @@ class Gallery:
                 # Add to index
                 files.append({
                     'name': filename,
-                    'time': os.path.getmtime(file_path)
+                    'time': stats.st_mtime
                 })
                 has_changes = True
         

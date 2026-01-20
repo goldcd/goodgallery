@@ -13,6 +13,7 @@ if __name__ == '__main__':
 import yaml
 from flask import Flask, render_template, request, jsonify, send_file, abort
 from werkzeug.utils import secure_filename
+from urllib.parse import unquote
 
 from app.database import Database
 from app.gallery import Gallery
@@ -21,12 +22,15 @@ from app.ai_tagger import AITagger
 from app.file_monitor import start_file_watcher
 
 
+# Determine project root directory (one level up from app/)
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 # Load configuration
 def load_config():
-    config_path = 'config.yaml'
+    config_path = os.path.join(ROOT_DIR, 'config.yaml')
     if not os.path.exists(config_path):
         # Try example config
-        config_path = 'config.yaml.example'
+        config_path = os.path.join(ROOT_DIR, 'config.yaml.example')
     
     with open(config_path, 'r') as f:
         return yaml.safe_load(f)
@@ -36,16 +40,24 @@ def load_config():
 app = Flask(__name__)
 config = load_config()
 
+# Resolve absolute paths
+PHOTO_DIR = os.path.normpath(os.path.join(ROOT_DIR, config['gallery']['photo_directory']))
+DATA_DIR = os.path.join(ROOT_DIR, 'data')
+DB_PATH = os.path.join(DATA_DIR, 'gallery.db')
+
+# Override config to use absolute path for server logic
+config['gallery']['photo_directory'] = PHOTO_DIR
+
 # Initialize components
-db = Database(config['database']['path'])
+db = Database(DB_PATH)
 gallery = Gallery(
-    config['gallery']['photo_directory'],
-    'data/cache',
+    PHOTO_DIR,
+    os.path.join(DATA_DIR, 'cache'),
     config['gallery']['allowed_extensions']
 )
 thumbs = ThumbnailGenerator(
-    config['gallery']['photo_directory'],
-    'data/thumbnails',
+    PHOTO_DIR,
+    os.path.join(DATA_DIR, 'thumbnails'),
     config['gallery']['thumbnail_size']
 )
 
@@ -114,11 +126,21 @@ def index():
 @app.route('/thumb/<path:filename>')
 def serve_thumbnail(filename):
     """Generate and serve thumbnail"""
-    filename = secure_filename(filename)
+    # Prevent directory traversal (don't use secure_filename - it strips underscores)
+    if '..' in filename or filename.startswith('/') or '\\' in filename:
+        abort(404)
     
     # Get or create thumbnail
     thumb_path = thumbs.get_or_create(filename)
     
+    # Retry with decoded filename if not found (e.g. %20 -> space)
+    if not thumb_path and '%' in filename:
+        try:
+            decoded_name = unquote(filename)
+            thumb_path = thumbs.get_or_create(decoded_name)
+        except:
+            pass
+            
     if thumb_path and os.path.exists(thumb_path):
         return send_file(thumb_path)
     
@@ -126,6 +148,16 @@ def serve_thumbnail(filename):
     original_path = os.path.normpath(os.path.join(gallery.photo_dir, filename))
     if os.path.exists(original_path):
         return send_file(original_path)
+        
+    # Retry original with decoded filename
+    if '%' in filename:
+        try:
+            decoded_name = unquote(filename)
+            original_path = os.path.normpath(os.path.join(gallery.photo_dir, decoded_name))
+            if os.path.exists(original_path):
+                return send_file(original_path)
+        except:
+            pass
     
     abort(404)
 
@@ -133,11 +165,23 @@ def serve_thumbnail(filename):
 @app.route('/img/<path:filename>')
 def serve_image(filename):
     """Serve original image"""
-    filename = secure_filename(filename)
+    # Prevent directory traversal
+    if '..' in filename or filename.startswith('/') or '\\' in filename:
+        abort(404)
     image_path = os.path.join(gallery.photo_dir, filename)
     
     if os.path.exists(image_path):
         return send_file(image_path)
+        
+    # Retry with decoded filename
+    if '%' in filename:
+        try:
+            decoded_name = unquote(filename)
+            image_path = os.path.join(gallery.photo_dir, decoded_name)
+            if os.path.exists(image_path):
+                return send_file(image_path)
+        except:
+            pass
     
     abort(404)
 
@@ -546,7 +590,7 @@ def run_server(host='127.0.0.1', port=None, debug=False):
     # Start file monitoring
     if config['gallery'].get('watch_for_changes', True):
         watcher = start_file_watcher(
-            config['gallery']['photo_directory'],
+            PHOTO_DIR,
             db,
             thumbs,
             config['gallery']['allowed_extensions']
