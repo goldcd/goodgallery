@@ -483,6 +483,16 @@
                 {% endif %}
             </form>
         </div>
+
+        <!-- Tag Filter Toggle Button -->
+        <div style="max-width: 1400px; margin: 0 auto; padding: 0 20px;">
+            <button id="toggleChips" class="toggle-chips-btn" style="display:none;" onclick="toggleTagChips()">
+                <span id="toggleIcon">▼</span> <span id="toggleText">Show Tag Filters</span>
+            </button>
+        </div>
+
+        <!-- Tag Filter Chips Container -->
+        <div id="relatedTags" class="related-tags" style="display:none;"></div>
     </div>
 
     <!-- Related Tags Filter Chips -->
@@ -884,19 +894,31 @@
             });
         }
 
-        // Load all popular tags (for browsing without search)
-        function loadAllTags() {
-            fetch('/api/tags?limit=30')
+        // Load tags from current view (for browsing)
+        function loadCurrentViewTags() {
+            const query = searchInput.value.trim() || '';
+
+            // Use related_tags API which returns tags from current filtered results
+            const url = query ? `/api/related_tags?q=${encodeURIComponent(query)}` : '/api/tags?limit=30';
+
+            fetch(url)
                 .then(r => r.json())
-                .then(tags => {
-                    if (tags.length === 0) return;
+                .then(tagsData => {
+                    // Handle both formats: array of strings or object with counts
+                    let tags = Array.isArray(tagsData) ? tagsData : Object.keys(tagsData);
+
+                    if (tags.length === 0) {
+                        document.getElementById('toggleChips').style.display = 'none';
+                        return;
+                    }
 
                     const container = document.getElementById('relatedTags');
                     let html = '<span style="font-size:12px; color:#adb5bd; align-self:center; margin-right:5px; font-weight:600;">BROWSE TAGS:</span>';
 
                     tags.forEach(tag => {
+                        const count = typeof tagsData === 'object' ? ` <span class="count">${tagsData[tag]}</span>` : '';
                         html += `<div class="tag-chip" data-tag="${tag}">` +
-                            `<span class="chip-label">${tag}</span>` +
+                            `<span class="chip-label">${tag}${count}</span>` +
                             `<span class="chip-btn btn-remove" title="Remove">✕</span>` +
                             `<span class="chip-btn btn-plus" title="Include">AND</span>` +
                             `<span class="chip-btn btn-minus" title="Exclude">NOT</span>` +
@@ -904,10 +926,29 @@
                     });
 
                     container.innerHTML = html;
-                    container.style.display = 'flex';
                     attachTagChipHandlers(container, {});
+
+                    // Show toggle button
+                    document.getElementById('toggleChips').style.display = 'block';
                 })
                 .catch(err => console.error('Error loading tags:', err));
+        }
+
+        // Toggle chip visibility
+        function toggleTagChips() {
+            const chips = document.getElementById('relatedTags');
+            const icon = document.getElementById('toggleIcon');
+            const text = document.getElementById('toggleText');
+
+            if (chips.style.display === 'none') {
+                chips.style.display = 'flex';
+                icon.textContent = '▲';
+                text.textContent = 'Hide Tag Filters';
+            } else {
+                chips.style.display = 'none';
+                icon.textContent = '▼';
+                text.textContent = 'Show Tag Filters';
+            }
         }
 
         // Load related tags (when searching)
@@ -1002,6 +1043,63 @@
                 document.getElementById('toggleText').textContent = 'Hide Tag Filters';
             }, 100);
         }
+
+        // ===== Drag-and-Drop Upload =====
+        const galleryEl = document.querySelector('.gallery');
+        let dragCounter = 0;
+
+        // Prevent default drag behavior
+        document.addEventListener('dragover', (e) => e.preventDefault());
+        document.addEventListener('dragenter', (e) => e.preventDefault());
+
+        // Visual feedback when dragging over gallery
+        galleryEl.addEventListener('dragenter', (e) => {
+            dragCounter++;
+            galleryEl.style.opacity = '0.5';
+            galleryEl.style.outline = '3px dashed #007bff';
+        });
+
+        galleryEl.addEventListener('dragleave', (e) => {
+            dragCounter--
+                ;
+            if (dragCounter === 0) {
+                galleryEl.style.opacity = '1';
+                galleryEl.style.outline = 'none';
+            }
+        });
+
+        // Handle drop
+        galleryEl.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            dragCounter = 0;
+            galleryEl.style.opacity = '1';
+            galleryEl.style.outline = 'none';
+
+            const formData = new FormData();
+            let hasImages = false;
+
+            for (const file of e.dataTransfer.files) {
+                if (file.type.startsWith('image/')) {
+                    formData.append('files', file);
+                    hasImages = true;
+                }
+            }
+
+            if (hasImages) {
+                try {
+                    const response = await fetch('/api/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    const data = await response.json();
+                    console.log(`Uploaded ${data.count} photos`);
+                    // File monitor will detect → auto-refresh
+                } catch (err) {
+                    console.error('Upload error:', err);
+                    alert('Error uploading photos');
+                }
+            }
+        });
 
         // ===== Drag-and-Drop Upload =====
         const galleryEl = document.querySelector('.gallery');
