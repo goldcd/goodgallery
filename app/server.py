@@ -12,6 +12,7 @@ from .database import Database
 from .gallery import Gallery
 from .thumbnails import ThumbnailGenerator
 from .ai_tagger import AITagger
+from .file_monitor import start_file_watcher
 
 
 # Load configuration
@@ -304,17 +305,262 @@ def api_delete():
         return jsonify({'error': 'Failed to delete'}), 500
 
 
+# --- MANUAL TAGGING STATE ---
+
+import threading
+
+tagging_state = {
+    'running': False,
+    'current': 0,
+    'total': 0,
+    'status': '',
+    'error': None,
+    'cancel_requested': False
+}
+tagging_lock = threading.Lock()
+tagging_thread = None
+
+
+@app.route('/api/start_tagging', methods=['POST'])
+def api_start_tagging():
+    """Start manual tagging process in background"""
+    global tagging_thread
+    
+    with tagging_lock:
+        if tagging_state['running']:
+            return jsonify({'status': 'already_running'})
+        
+        # Reset state
+        tagging_state['running'] = True
+        tagging_state['current'] = 0
+        tagging_state['total'] = 0
+        tagging_state['status'] = 'Starting...'
+        tagging_state['error'] = None
+        tagging_state['cancel_requested'] = False
+    
+    # Start tagging in background
+    tagging_thread = threading.Thread(target=manual_tagging_worker, daemon=True)
+    tagging_thread.start()
+    
+    return jsonify({'status': 'started'})
+
+
+@app.route('/api/tagging_status')
+def api_tagging_status():
+    """Get current tagging progress"""
+    with tagging_lock:
+        return jsonify({
+            'running': tagging_state['running'],
+            'current': tagging_state['current'],
+            'total': tagging_state['total'],
+            'status': tagging_state['status'],
+            'error': tagging_state['error']
+        })
+
+
+@app.route('/api/cancel_tagging', methods=['POST'])
+def api_cancel_tagging():
+    """Cancel ongoing tagging process"""
+    with tagging_lock:
+        if tagging_state['running']:
+            tagging_state['cancel_requested'] = True
+            return jsonify({'status': 'cancelling'})
+        else:
+            return jsonify({'status': 'not_running'})
+
+
+@app.route('/api/gpu_status')
+def api_gpu_status():
+    """Get GPU memory status"""
+    tagger = get_ai_tagger()
+    memory = tagger.get_memory_usage()
+    return jsonify({
+        'model_loaded': tagger.is_loaded,
+        'memory': memory
+    })
+
+
+def manual_tagging_worker():
+    """Background worker for manual tagging"""
+    try:
+        # Get untagged files
+        all_files = gallery.get_file_index()
+        tagged = db.get_tagged_filenames()
+        
+        untagged = [
+            f['name'] for f in all_files
+            if f['name'].lower() not in tagged
+        ]
+        
+        with tagging_lock:
+            tagging_state['total'] = len(untagged)
+            tagging_state['status'] = f'Found {len(untagged)} untagged images'
+        
+        if not untagged:
+            with tagging_lock:
+                tagging_state['running'] = False
+                tagging_state['status'] = 'No untagged images found'
+            return
+        
+        # Load AI model
+        with tagging_lock:
+            tagging_state['status'] = 'Loading AI model...'
+        
+        tagger =get_ai_tagger()
+        if not tagger.is_loaded:
+            tagger.load_model()
+        
+        # Process in batches
+        batch_size = config['ai']['batch_size']
+        total = len(untagged)
+        
+        for i in range(0, total, batch_size):
+            # Check for cancellation
+            with tagging_lock:
+                if tagging_state['cancel_requested']:
+                    tagging_state['running'] = False
+                    tagging_state['status'] = 'Cancelled by user'
+                    break
+            
+            batch = untagged[i:i+batch_size]
+            image_paths = [os.path.join(gallery.photo_dir, f) for f in batch]
+            
+            # Update status
+            with tagging_lock:
+                tagging_state['status'] = f'Tagging batch {i//batch_size + 1}...'
+            
+            # Tag batch
+            try:
+                results = tagger.tag_batch(image_paths)
+                db.save_tags_batch(results)
+                
+                # Update progress
+                with tagging_lock:
+                    tagging_state['current'] = min(i + batch_size, total)
+            except Exception as e:
+                with tagging_lock:
+                    tagging_state['error'] = str(e)
+                    tagging_state['running'] = False
+                return
+        
+        # Unload model to free GPU memory
+        if config['ai'].get('keep_model_loaded', False) == False:
+            with tagging_lock:
+                tagging_state['status'] = 'Unloading model...'
+            tagger.unload_model()
+        
+        # Complete
+        with tagging_lock:
+            if not tagging_state['cancel_requested']:
+                tagging_state['running'] = False
+                tagging_state['status'] = f'✓ Tagged {total} images'
+                tagging_state['current'] = total
+    
+    except Exception as e:
+        with tagging_lock:
+            tagging_state['running'] = False
+            tagging_state['error'] = str(e)
+            tagging_state['status'] = 'Error occurred'
+
+
 # --- RUN SERVER ---
+
+def auto_tag_on_startup():
+    """Auto-tag untagged images on startup (runs in background)"""
+    import time
+    
+    # Wait a moment for server to start
+    time.sleep(2)
+    
+    try:
+        print("🤖 Auto-tagging enabled - scanning for untagged images...")
+        
+        # Get untagged files
+        all_files = gallery.get_file_index()
+        tagged = db.get_tagged_filenames()
+        
+        untagged = [
+            f['name'] for f in all_files 
+            if f['name'].lower() not in tagged
+        ]
+        
+        if not untagged:
+            print("✓ All images are already tagged!\n")
+            return
+        
+        print(f"   Found {len(untagged)} untagged images")
+        print("   Starting AI tagging (this may take a while)...\n")
+        
+        # Load AI model
+        tagger = get_ai_tagger()
+        if not tagger.is_loaded:
+            tagger.load_model()
+        
+        # Process in batches
+        batch_size = config['ai']['batch_size']
+        total = len(untagged)
+        
+        for i in range(0, total, batch_size):
+            batch = untagged[i:i+batch_size]
+            image_paths = [os.path.join(gallery.photo_dir, f) for f in batch]
+            
+            # Tag batch
+            results = tagger.tag_batch(image_paths)
+            db.save_tags_batch(results)
+            
+            # Progress
+            processed = min(i + batch_size, total)
+            print(f"   Tagged {processed}/{total} images...")
+        
+        print(f"\n✓ Auto-tagging complete! Tagged {total} images")
+        
+        # Unload model to free GPU memory
+        if config['ai'].get('keep_model_loaded', False) == False:
+            print("🧹 Unloading model to free GPU memory...")
+            tagger.unload_model()
+        
+    except Exception as e:
+        print(f"\n⚠️  Auto-tagging failed: {e}")
+        print("   You can still tag images manually from the web UI\n")
+
 
 def run_server(host='127.0.0.1', port=None, debug=False):
     """Start Flask server"""
     if port is None:
         port = config['gallery']['port']
     
-    print(f"\n🚀 GoodGallery running at http://{host}:{port}")
+    # Startup info
+    print("\n" + "="*60)
+    print("   ✓ GoodGallery Started Successfully!")
+    print("="*60)
+    print(f"\n🌐 Server running at: http://{host}:{port}")
     print(f"📁 Photo directory: {config['gallery']['photo_directory']}")
     print(f"🏷️  Tagged images: {db.get_stats()['tagged']}")
+    
+    # Start file monitoring
+    if config['gallery'].get('watch_for_changes', True):
+        watcher = start_file_watcher(
+            config['gallery']['photo_directory'],
+            db,
+            thumbs,
+            config['gallery']['allowed_extensions']
+        )
+        if watcher:
+            print("👁️  File monitoring: enabled")
+    
+    # Check auto-tag setting
+    if config['ai'].get('auto_tag', False):
+        print("🤖 Auto-tagging: enabled")
+        
+        # Start auto-tagging in background
+        import threading
+        thread = threading.Thread(target=auto_tag_on_startup, daemon=True)
+        thread.start()
+    else:
+        print("🤖 Auto-tagging: disabled")
+    
     print("\nPress Ctrl+C to stop\n")
+    print("="*60 + "\n")
     
     app.run(host=host, port=port, debug=debug)
 

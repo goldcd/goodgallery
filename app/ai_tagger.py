@@ -275,4 +275,16 @@ class AITagger:
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             
-            print("Model unloaded from memory")
+            print("🧹 Model unloaded from memory")
+    
+    def get_memory_usage(self):
+        """Get current GPU memory usage"""
+        if not torch.cuda.is_available():
+            return None
+        
+        return {
+            'allocated_gb': round(torch.cuda.memory_allocated() / 1e9, 2),
+            'reserved_gb': round(torch.cuda.memory_reserved() / 1e9, 2),
+            'device_name': torch.cuda.get_device_name(0),
+            'device_count': torch.cuda.device_count()
+        }

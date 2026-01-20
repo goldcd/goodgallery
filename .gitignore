@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+
+# Bootstrap downloads
+runtime/
+models/
+cache/
+
+# User data
+photos/*
+!photos/README.txt
+data/
+*.db
+*.db-journal
+
+# Config (users create their own)
+config.yaml
+
+# Thumbnails
+static/thumbnails/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log

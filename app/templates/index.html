@@ -146,6 +146,122 @@
                 align-items: stretch;
             }
         }
+
+        /* Tagging Controls */
+        .tag-button {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.2s;
+        }
+
+        .tag-button:hover:not(:disabled) {
+            background: #218838;
+        }
+
+        .tag-button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .tag-button .count {
+            background: rgba(255, 255, 255, 0.3);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+
+        /* Progress Overlay */
+        .progress-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .progress-overlay.hidden {
+            display: none;
+        }
+
+        .progress-container {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            max-width: 500px;
+            width: 90%;
+        }
+
+        .progress-container h3 {
+            margin: 0 0 20px 0;
+            font-size: 20px;
+            text-align: center;
+        }
+
+        .progress-status {
+            color: #666;
+            margin-bottom: 10px;
+            text-align: center;
+            min-height: 20px;
+        }
+
+        .progress-bar {
+            background: #e9ecef;
+            height: 30px;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .progress-fill {
+            background: linear-gradient(90deg, #007bff, #0056b3);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .progress-text {
+            text-align: center;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .cancel-button {
+            margin-top: 20px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 14px;
+        }
+
+        .cancel-button:hover {
+            background: #c82333;
+        }
     </style>
 </head>
 
@@ -158,6 +274,10 @@
                     {{ total_files }} images | {{ tagged_count }} tagged
                 </div>
             </div>
+
+            <button id="tag-btn" class="tag-button" onclick="startTagging()">
+                🏷️ Tag <span class="count" id="untagged-count">{{ total_files - tagged_count }}</span> Untagged
+            </button>
 
             <form class="search-box" method="get">
                 <select name="t">
@@ -244,6 +364,130 @@
         }
     </script>
     {% endif %}
+
+    <!-- Progress Overlay -->
+    <div id="progress-overlay" class="progress-overlay hidden">
+        <div class="progress-container">
+            <h3>🤖 AI Tagging in Progress</h3>
+            <p class="progress-status" id="progress-status">Initializing...</p>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <p class="progress-text" id="progress-text">0 / 0 images tagged</p>
+            <button class="cancel-button" id="cancel-btn" onclick="cancelTagging()">Cancel</button>
+        </div>
+    </div>
+
+    <script>
+        let taggingPollInterval = null;
+
+        async function startTagging() {
+            const untaggedCount = parseInt(document.getElementById('untagged-count').textContent);
+
+            if (untaggedCount === 0) {
+                alert('All images are already tagged!');
+                return;
+            }
+
+            // Disable button
+            const btn = document.getElementById('tag-btn');
+            btn.disabled = true;
+
+            // Show overlay
+            document.getElementById('progress-overlay').classList.remove('hidden');
+            document.getElementById('progress-status').textContent = 'Starting tagging process...';
+
+            try {
+                // Start tagging
+                const response = await fetch('/api/start_tagging', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'started' || data.status === 'already_running') {
+                    // Poll for progress
+                    pollTaggingProgress();
+                } else if (data.error) {
+                    alert('Error: ' + data.error);
+                    closeProgressOverlay();
+                }
+            } catch (error) {
+                alert('Failed to start tagging: ' + error);
+                closeProgressOverlay();
+            }
+        }
+
+        function pollTaggingProgress() {
+            taggingPollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/tagging_status');
+                    const data = await response.json();
+
+                    if (data.running) {
+                        // Update progress
+                        const percent = data.total > 0 ? Math.round((data.current / data.total) * 100) : 0;
+                        document.getElementById('progress-fill').style.width = percent + '%';
+                        document.getElementById('progress-fill').textContent = percent + '%';
+                        document.getElementById('progress-text').textContent = `${data.current} / ${data.total} images tagged`;
+                        document.getElementById('progress-status').textContent = data.status || 'Processing...';
+                    } else {
+                        // Tagging complete
+                        clearInterval(taggingPollInterval);
+
+                        if (data.error) {
+                            document.getElementById('progress-status').textContent = 'Error: ' + data.error;
+                            document.getElementById('progress-status').style.color = '#dc3545';
+                        } else {
+                            document.getElementById('progress-fill').style.width = '100%';
+                            document.getElementById('progress-fill').textContent = '100%';
+                            document.getElementById('progress-status').textContent = '✅ Tagging complete!';
+                            document.getElementById('progress-status').style.color = '#28a745';
+
+                            // Reload page after 2 seconds
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 2000);
+                        }
+                    }
+                } catch (error) {
+                    clearInterval(taggingPollInterval);
+                    alert('Error checking progress: ' + error);
+                    closeProgressOverlay();
+                }
+            }, 500);
+        }
+
+        async function cancelTagging() {
+            if (!confirm('Are you sure you want to cancel tagging?')) {
+                return;
+            }
+
+            try {
+                await fetch('/api/cancel_tagging', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                clearInterval(taggingPollInterval);
+                document.getElementById('progress-status').textContent = 'Cancelled by user';
+                document.getElementById('progress-status').style.color = '#dc3545';
+
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+            } catch (error) {
+                alert('Error cancelling: ' + error);
+            }
+        }
+
+        function closeProgressOverlay() {
+            document.getElementById('progress-overlay').classList.add('hidden');
+            document.getElementById('tag-btn').disabled = false;
+            clearInterval(taggingPollInterval);
+        }
+    </script>
 </body>
 
 </html>

@@ -7,6 +7,9 @@ gallery:
   # Web server port
   port: 5000
   
+  # Monitor photos directory for changes (auto-detect additions/deletions)
+  watch_for_changes: true
+  
   # Thumbnail settings
   thumbnail_size: 200
   images_per_page: 100
@@ -25,6 +28,9 @@ ai:
   
   # Auto-tag images on startup
   auto_tag: false
+  
+  # Keep model loaded in GPU memory (faster but uses more VRAM)
+  keep_model_loaded: false
   
   # Number of images to process per GPU batch
   batch_size: 15
