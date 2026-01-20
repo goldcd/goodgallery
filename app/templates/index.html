@@ -76,6 +76,75 @@
             background: #0056b3;
         }
 
+        /* Autocomplete Dropdown */
+        .autocomplete-container {
+            position: relative;
+            display: inline-block;
+        }
+
+        .autocomplete-items {
+            position: absolute;
+            background: white;
+            border: 1px solid #ddd;
+            border-top: none;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+            width: 100%;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .autocomplete-items div {
+            padding: 10px;
+            cursor: pointer;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .autocomplete-items div:hover {
+            background-color: #f0f0f0;
+        }
+
+        .autocomplete-items .autocomplete-active {
+            background-color: #007bff;
+            color: white;
+        }
+
+        /* Tag Chips for Active Filters */
+        .related-tags {
+            max-width: 1400px;
+            margin: 0 auto 20px auto;
+            padding: 0 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .tag-chip {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            padding: 6px 12px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tag-chip:hover {
+            border-color: #aaa;
+        }
+
+        .tag-chip.active {
+            background: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+        }
+
+        .tag-chip.exclude {
+            background: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+
         .gallery {
             max-width: 1400px;
             margin: 0 auto;
@@ -280,11 +349,15 @@
             </button>
 
             <form class="search-box" method="get">
-                <select name="t">
+                <select name="t" id="searchType">
                     <option value="tag" {% if search_type=='tag' %}selected{% endif %}>Tags</option>
                     <option value="name" {% if search_type=='name' %}selected{% endif %}>Filename</option>
                 </select>
-                <input type="text" name="q" value="{{ search_query }}" placeholder="Search..." autofocus>
+                <div class="autocomplete-container">
+                    <input type="text" name="q" id="searchInput" value="{{ search_query }}" placeholder="Search..."
+                        autocomplete="off">
+                    <div id="autocomplete-list" class="autocomplete-items"></div>
+                </div>
                 <button type="submit">Search</button>
                 {% if search_query %}
                 <a href="/" style="text-decoration: none; color: #666;">Clear</a>
@@ -445,6 +518,12 @@
                             document.getElementById('progress-status').textContent = '✅ Tagging complete!';
                             document.getElementById('progress-status').style.color = '#28a745';
 
+                            // Reload tag list for autocomplete
+                            if (typeof loadTags === 'function') {
+                                tagsLoaded = false;  // Force reload
+                                loadTags();
+                            }
+
                             // Reload page after 2 seconds
                             setTimeout(() => {
                                 window.location.reload();
@@ -486,6 +565,135 @@
             document.getElementById('progress-overlay').classList.add('hidden');
             document.getElementById('tag-btn').disabled = false;
             clearInterval(taggingPollInterval);
+        }
+
+        // ===== Tag Autocomplete =====
+        let allTags = [];
+        let tagsLoaded = false;
+        let currentFocus = -1;
+
+        const searchInput = document.getElementById('searchInput');
+        const searchType = document.getElementById('searchType');
+        const autocompleteList = document.getElementById('autocomplete-list');
+
+        // Load tags from API
+        function loadTags() {
+            if (tagsLoaded) return;
+
+            fetch('/api/tags')
+                .then(r => r.json())
+                .then(tags => {
+                    allTags = tags;
+                    tagsLoaded = true;
+                    console.log('Loaded ' + tags.length + ' tags');
+                })
+                .catch(err => console.error('Error loading tags:', err));
+        }
+
+        // Show autocomplete suggestions
+        function showAutocomplete() {
+            const val = searchInput.value.toLowerCase();
+
+            // Only show for tag search
+            if (!val || searchType.value !== 'tag' || !tagsLoaded) {
+                autocompleteList.style.display = 'none';
+                return;
+            }
+
+            currentFocus = -1;
+            autocompleteList.innerHTML = '';
+
+            const matches = allTags.filter(t => t.toLowerCase().includes(val)).slice(0, 50);
+
+            if (matches.length === 0) {
+                autocompleteList.style.display = 'none';
+                return;
+            }
+
+            matches.forEach(tag => {
+                const div = document.createElement('div');
+                const startIdx = tag.toLowerCase().indexOf(val);
+                const before = tag.substring(0, startIdx);
+                const match = tag.substring(startIdx, startIdx + val.length);
+                const after = tag.substring(startIdx + val.length);
+
+                div.innerHTML = before + '<strong>' + match + '</strong>' + after;
+                div.addEventListener('click', () => {
+                    searchInput.value = tag.includes(' ') ? '"' + tag + '"' : tag;
+                    autocompleteList.style.display = 'none';
+                    searchInput.form.submit();
+                });
+                autocompleteList.appendChild(div);
+            });
+
+            autocompleteList.style.display = 'block';
+        }
+
+        // Keyboard navigation
+        searchInput.addEventListener('keydown', (e) => {
+            const items = autocompleteList.getElementsByTagName('div');
+
+            if (e.keyCode === 40) { // Down
+                currentFocus++;
+                setActive(items);
+                e.preventDefault();
+            } else if (e.keyCode === 38) { // Up
+                currentFocus--;
+                setActive(items);
+                e.preventDefault();
+            } else if (e.keyCode === 13) { // Enter
+                if (currentFocus > -1 && items[currentFocus]) {
+                    e.preventDefault();
+                    items[currentFocus].click();
+                }
+            } else if (e.keyCode === 27) { // Escape
+                autocompleteList.style.display = 'none';
+            }
+        });
+
+        function setActive(items) {
+            if (!items || items.length === 0) return;
+
+            // Remove active class from all
+            for (let i = 0; i < items.length; i++) {
+                items[i].classList.remove('autocomplete-active');
+            }
+
+            // Wrap around
+            if (currentFocus >= items.length) currentFocus = 0;
+            if (currentFocus < 0) currentFocus = items.length - 1;
+
+            // Add active class
+            items[currentFocus].classList.add('autocomplete-active');
+            items[currentFocus].scrollIntoView({ block: 'nearest' });
+        }
+
+        // Event listeners
+        searchInput.addEventListener('input', showAutocomplete);
+        searchInput.addEventListener('focus', () => {
+            if (searchInput.value && searchType.value === 'tag') {
+                showAutocomplete();
+            }
+        });
+
+        searchType.addEventListener('change', () => {
+            if (searchType.value === 'tag') {
+                loadTags();
+            } else {
+                autocompleteList.style.display = 'none';
+            }
+        });
+
+        // Close on outside click
+        document.addEventListener('click', (e) => {
+            if (e.target !== searchInput) {
+                autocompleteList.style.display = 'none';
+            }
+        });
+
+        // Load tags on page load if tag search is selected
+        if (searchType.value === 'tag') {
+            loadTags();
         }
     </script>
 </body>
