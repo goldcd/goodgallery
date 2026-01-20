@@ -283,6 +283,13 @@ def api_tags():
     return jsonify([tag for tag, count in top_tags])
 
 
+@app.route('/api/file_count')
+def api_file_count():
+    """Get current file count for change detection"""
+    total_files = len(gallery.get_file_index())
+    return jsonify({'count': total_files})
+
+
 @app.route('/api/related_tags')
 def api_related_tags():
     """Get related tags for a search query"""

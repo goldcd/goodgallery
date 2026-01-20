@@ -111,42 +111,144 @@
 
         /* Tag Chips for Active Filters */
         .related-tags {
-            max-width: 1400px;
             margin: 0 auto 20px auto;
             padding: 0 20px;
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
+            align-items: center;
         }
 
         .tag-chip {
             background: white;
-            border: 1px solid #ddd;
-            border-radius: 20px;
-            padding: 6px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 16px;
+            padding: 0;
             font-size: 13px;
-            cursor: pointer;
+            color: #495057;
+            display: flex;
+            align-items: center;
+            overflow: hidden;
             transition: all 0.2s;
+            user-select: none;
         }
 
         .tag-chip:hover {
-            border-color: #aaa;
+            border-color: #adb5bd;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
         }
 
-        .tag-chip.active {
-            background: #d4edda;
+        /* Chip sections */
+        .chip-label {
+            padding: 4px 10px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .chip-label:hover {
+            background-color: #f1f3f5;
+        }
+
+        /* Buttons hidden by default */
+        .chip-btn {
+            padding: 0;
+            max-width: 0;
+            overflow: hidden;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-left: 1px solid transparent;
+            color: #adb5bd;
+            transition: all 0.2s ease-out;
+            opacity: 0;
+            white-space: nowrap;
+        }
+
+        /* Expanded state */
+        .tag-chip.expanded {
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            z-index: 10;
+        }
+
+        .tag-chip.expanded .chip-btn {
+            max-width: 50px;
+            padding: 4px 8px;
+            opacity: 1;
+            border-left-color: #dee2e6;
+        }
+
+        .tag-chip.expanded .chip-btn:hover {
+            background-color: #e9ecef;
+            color: #495057;
+        }
+
+        /* Conditional button visibility */
+        .tag-chip:not(.include):not(.exclude).expanded .btn-plus,
+        .tag-chip:not(.include):not(.exclude).expanded .btn-minus {
+            max-width: 50px;
+            padding: 4px 8px;
+            opacity: 1;
+        }
+
+        .tag-chip.include.expanded .btn-remove,
+        .tag-chip.include.expanded .btn-minus {
+            max-width: 50px;
+            padding: 4px 8px;
+            opacity: 1;
+        }
+
+        .tag-chip.exclude.expanded .btn-remove,
+        .tag-chip.exclude.expanded .btn-plus {
+            max-width: 50px;
+            padding: 4px 8px;
+            opacity: 1;
+        }
+
+        /* State colors */
+        .tag-chip.include {
             border-color: #c3e6cb;
+            background-color: #d4edda;
+        }
+
+        .tag-chip.include .chip-label {
             color: #155724;
+            background-color: #d4edda;
         }
 
         .tag-chip.exclude {
-            background: #f8d7da;
             border-color: #f5c6cb;
+            background-color: #f8d7da;
+        }
+
+        .tag-chip.exclude .chip-label {
             color: #721c24;
+            background-color: #f8d7da;
+        }
+
+        /* Button colors */
+        .btn-plus {
+            color: #28a745;
+        }
+
+        .btn-minus {
+            color: #dc3545;
+        }
+
+        .btn-remove {
+            color: #6c757d;
+        }
+
+        .tag-chip .count {
+            font-size: 10px;
+            color: #adb5bd;
+            margin-left: 4px;
+            font-weight: normal;
         }
 
         .gallery {
-            max-width: 1400px;
             margin: 0 auto;
             padding: 0 20px;
             display: grid;
@@ -365,6 +467,9 @@
             </form>
         </div>
     </div>
+
+    <!-- Related Tags Filter Chips -->
+    <div id="relatedTags" class="related-tags" style="display:none;"></div>
 
     <div class="gallery">
         {% if files %}
@@ -695,6 +800,172 @@
         if (searchType.value === 'tag') {
             loadTags();
         }
+
+        // ===== Tag Filter Chips =====
+        function loadRelatedTags() {
+            const query = '{{ search_query|safe }}';
+            if (!query || searchType.value !== 'tag') return;
+
+            // 1. Parse current state from query
+            const activeState = {};
+            const regex = /([+-]?)(?:"([^"]*)"|([^\s"]+))/g;
+            let match;
+
+            while ((match = regex.exec(query)) !== null) {
+                const prefix = match[1];
+                const term = match[2] || match[3];
+                if (!term) continue;
+                const termLower = term.toLowerCase();
+
+                if (prefix === '-') activeState[termLower] = 'exclude';
+                else activeState[termLower] = 'include';
+            }
+
+            // 2. Fetch related tags from API
+            fetch('/api/related_tags?q=' + encodeURIComponent(query))
+                .then(r => r.json())
+                .then(apiTags => {
+                    const container = document.getElementById('relatedTags');
+
+                    // 3. Merge lists - active tags first, then suggestions
+                    const displayList = [];
+                    const seen = {};
+
+                    for (const t in activeState) {
+                        displayList.push({
+                            tag: t,
+                            state: activeState[t],
+                            count: apiTags[t] || ''
+                        });
+                        seen[t] = true;
+                    }
+
+                    for (const t in apiTags) {
+                        if (!seen[t]) {
+                            displayList.push({
+                                tag: t,
+                                state: 'neutral',
+                                count: apiTags[t]
+                            });
+                            seen[t] = true;
+                        }
+                    }
+
+                    if (displayList.length === 0) return;
+
+                    // 4. Render chips
+                    let html = '<span style="font-size:12px; color:#adb5bd; align-self:center; margin-right:5px; font-weight:600;">REFINE:</span>';
+
+                    displayList.forEach(item => {
+                        let cls = 'tag-chip';
+                        if (item.state === 'include') cls += ' include';
+                        if (item.state === 'exclude') cls += ' exclude';
+
+                        const countSpan = item.count ? ` <span class="count">${item.count}</span>` : '';
+
+                        html += `<div class="${cls}" data-tag="${item.tag}">` +
+                            `<span class="chip-label">${item.tag}${countSpan}</span>` +
+                            `<span class="chip-btn btn-remove" title="Remove">✕</span>` +
+                            `<span class="chip-btn btn-plus" title="Include">AND</span>` +
+                            `<span class="chip-btn btn-minus" title="Exclude">NOT</span>` +
+                            `</div>`;
+                    });
+
+                    container.innerHTML = html;
+                    container.style.display = 'flex';
+
+                    // 5. Add event handlers
+                    function updateState(tag, newState) {
+                        const nextState = Object.assign({}, activeState);
+
+                        if (newState === 'neutral') delete nextState[tag];
+                        else nextState[tag] = newState;
+
+                        let finalStr = '';
+                        for (const t in nextState) {
+                            let token = t;
+                            if (token.indexOf(' ') > -1) token = '"' + token + '"';
+
+                            if (nextState[t] === 'exclude') finalStr += '-' + token + ' ';
+                            else finalStr += '+' + token + ' ';
+                        }
+
+                        searchInput.value = finalStr.trim();
+                        searchInput.form.submit();
+                    }
+
+                    const chips = container.getElementsByClassName('tag-chip');
+                    for (let i = 0; i < chips.length; i++) {
+                        // Label click -> toggle expand
+                        chips[i].querySelector('.chip-label').addEventListener('click', function (e) {
+                            e.stopPropagation();
+                            const parent = this.closest('.tag-chip');
+                            const wasExpanded = parent.classList.contains('expanded');
+
+                            // Close all others
+                            const all = container.getElementsByClassName('tag-chip');
+                            for (let j = 0; j < all.length; j++) {
+                                all[j].classList.remove('expanded');
+                            }
+
+                            if (!wasExpanded) parent.classList.add('expanded');
+                        });
+
+                        // Plus (AND)
+                        chips[i].querySelector('.btn-plus').addEventListener('click', function (e) {
+                            e.stopPropagation();
+                            updateState(this.closest('.tag-chip').getAttribute('data-tag'), 'include');
+                        });
+
+                        // Minus (NOT)
+                        chips[i].querySelector('.btn-minus').addEventListener('click', function (e) {
+                            e.stopPropagation();
+                            updateState(this.closest('.tag-chip').getAttribute('data-tag'), 'exclude');
+                        });
+
+                        // Remove (Clear)
+                        chips[i].querySelector('.btn-remove').addEventListener('click', function (e) {
+                            e.stopPropagation();
+                            updateState(this.closest('.tag-chip').getAttribute('data-tag'), 'neutral');
+                        });
+                    }
+
+                    // Global click -> close all
+                    document.addEventListener('click', (e) => {
+                        if (!e.target.closest('.tag-chip')) {
+                            const all = container.getElementsByClassName('tag-chip');
+                            for (let j = 0; j < all.length; j++) {
+                                all[j].classList.remove('expanded');
+                            }
+                        }
+                    });
+                })
+                .catch(err => console.error('Error loading related tags:', err));
+        }
+
+        // Run if searching
+        if ('{{ search_query }}') {
+            loadRelatedTags();
+        }
+
+        // ===== Auto-Refresh on File Changes =====
+        let initialFileCount = {{ total_files }};
+
+        function checkForFileChanges() {
+            fetch('/api/file_count')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.count !== initialFileCount) {
+                        console.log(`File count changed: ${initialFileCount} → ${data.count}`);
+                        // Reload page, preserving current URL (keeps search filters)
+                        window.location.reload();
+                    }
+                })
+                .catch(err => console.error('Error checking file count:', err));
+        }
+
+        // Poll every 5 seconds for file changes
+        setInterval(checkForFileChanges, 5000);
     </script>
 </body>
 

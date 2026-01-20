@@ -68,8 +68,12 @@ class Gallery:
                 with open(self.index_file, 'r') as f:
                     existing = json.load(f)
                     if isinstance(existing, list):
-                        files = existing
-                        known_files = {f['name'] for f in files}
+                        # Filter out files that no longer exist on disk
+                        for f_item in existing:
+                            file_path = os.path.join(self.photo_dir, f_item['name'])
+                            if os.path.exists(file_path):
+                                files.append(f_item)
+                                known_files.add(f_item['name'])
             except:
                 pass
         
@@ -78,12 +82,18 @@ class Gallery:
         
         try:
             for filename in os.listdir(self.photo_dir):
-                # Skip if already known
+                # Skip if already in cache
                 if filename in known_files:
                     continue
                 
-                # Skip hidden files and Mac metadata
+                # Skip hidden files and metadata
                 if filename.startswith('.') or filename.startswith('._'):
+                    continue
+                
+                filepath = os.path.join(self.photo_dir, filename)
+                
+                # Only process files (not directories)
+                if not os.path.isfile(filepath):
                     continue
                 
                 # Check extension
@@ -91,30 +101,26 @@ class Gallery:
                 if ext not in self.allowed_extensions:
                     continue
                 
-                # Get full path
-                file_path = os.path.join(self.photo_dir, filename)
-                
-                # Validation: Skip zero-byte files
+                # Skip zero-byte files
                 try:
-                    stats = os.stat(file_path)
-                    if stats.st_size == 0:
+                    if os.path.getsize(filepath) == 0:
                         continue
                 except OSError:
                     continue
                 
-                # Skip directories
-                if os.path.isdir(file_path):
-                    continue
-                
-                # Add to index
+                # Add new file
                 files.append({
                     'name': filename,
-                    'time': stats.st_mtime
+                    'time': int(os.path.getmtime(filepath))
                 })
                 has_changes = True
         
         except Exception as e:
             print(f"Error scanning directory: {e}")
+        
+        # Check if files were removed
+        if len(files) != len(known_files) + (1 if has_changes else 0):
+            has_changes = True
         
         # Sort by time (newest first) - PHP line 183
         files.sort(key=lambda x: x['time'], reverse=True)
