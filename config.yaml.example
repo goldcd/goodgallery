@@ -1,0 +1,37 @@
+# GoodGallery Configuration
+
+gallery:
+  # Path to your photo directory (REQUIRED)
+  photo_directory: "path/to/your/photos"
+  
+  # Web server port
+  port: 5000
+  
+  # Thumbnail settings
+  thumbnail_size: 200
+  images_per_page: 100
+  
+  # Allowed image extensions
+  allowed_extensions:
+    - jpg
+    - jpeg
+    - png
+    - gif
+    - webp
+
+ai:
+  # LLaVA model to use (automatically downloads on first run)
+  model: "llava-hf/llava-1.5-7b-hf"
+  
+  # Auto-tag images on startup
+  auto_tag: false
+  
+  # Number of images to process per GPU batch
+  batch_size: 15
+  
+  # Enable 4-bit quantization (fits in ~6GB VRAM)
+  use_quantization: true
+
+database:
+  # SQLite database path
+  path: "data/gallery.db"

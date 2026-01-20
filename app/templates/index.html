@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GoodGallery</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+        }
+
+        .header {
+            background: white;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .stats {
+            font-size: 14px;
+            color: #666;
+        }
+
+        .search-box {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .search-box select,
+        .search-box input,
+        .search-box button {
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .search-box input {
+            min-width: 250px;
+        }
+
+        .search-box button {
+            background: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .search-box button:hover {
+            background: #0056b3;
+        }
+
+        .gallery {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .gallery-item {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .gallery-item:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .thumb-container {
+            position: relative;
+            padding-top: 100%;
+            /* 1:1 aspect ratio */
+            background: #f0f0f0;
+            overflow: hidden;
+        }
+
+        .thumb-container img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .filename {
+            padding: 10px;
+            font-size: 12px;
+            color: #666;
+            word-break: break-all;
+            line-height: 1.4;
+        }
+
+        .loader {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+
+        @media (max-width: 768px) {
+            .gallery {
+                grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+                gap: 15px;
+            }
+
+            .header-content {
+                flex-direction: column;
+                align-items: stretch;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <div class="header-content">
+            <div>
+                <h1>GoodGallery</h1>
+                <div class="stats">
+                    {{ total_files }} images | {{ tagged_count }} tagged
+                </div>
+            </div>
+
+            <form class="search-box" method="get">
+                <select name="t">
+                    <option value="tag" {% if search_type=='tag' %}selected{% endif %}>Tags</option>
+                    <option value="name" {% if search_type=='name' %}selected{% endif %}>Filename</option>
+                </select>
+                <input type="text" name="q" value="{{ search_query }}" placeholder="Search..." autofocus>
+                <button type="submit">Search</button>
+                {% if search_query %}
+                <a href="/" style="text-decoration: none; color: #666;">Clear</a>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    <div class="gallery">
+        {% if files %}
+        {% for file in files %}
+        <div class="gallery-item">
+            <a href="/img/{{ file.name }}" target="_blank">
+                <div class="thumb-container">
+                    <img src="/thumb/{{ file.name }}" alt="{{ file.name }}" loading="lazy">
+                </div>
+            </a>
+            <div class="filename">{{ file.name }}</div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="no-results" style="grid-column: 1/-1;">
+            No images found.
+        </div>
+        {% endif %}
+    </div>
+
+    {% if has_more %}
+    <div class="loader">
+        <div id="load-more">Scroll for more...</div>
+    </div>
+
+    <script>
+        let page = {{ page }};
+        let loading = false;
+        let hasMore = {{ 'true' if has_more else 'false' }};
+        const searchParams = new URLSearchParams(window.location.search);
+
+        window.addEventListener('scroll', () => {
+            if (loading || !hasMore) return;
+
+            const scrollTop = window.scrollY;
+            const windowHeight = window.innerHeight;
+            const docHeight = document.documentElement.scrollHeight;
+
+            if (scrollTop + windowHeight > docHeight - 500) {
+                loadMore();
+            }
+        });
+
+        async function loadMore() {
+            loading = true;
+            page++;
+            searchParams.set('page', page);
+
+            try {
+                const response = await fetch('/?' + searchParams.toString());
+                const html = await response.text();
+
+                // Parse and extract gallery items
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const newItems = doc.querySelectorAll('.gallery-item');
+
+                if (newItems.length === 0) {
+                    hasMore = false;
+                    document.getElementById('load-more').textContent = 'No more images';
+                } else {
+                    const gallery = document.querySelector('.gallery');
+                    newItems.forEach(item => gallery.appendChild(item));
+                }
+            } catch (e) {
+                console.error('Failed to load more:', e);
+            } finally {
+                loading = false;
+            }
+        }
+    </script>
+    {% endif %}
+</body>
+
+</html>
