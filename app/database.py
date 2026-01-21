@@ -5,6 +5,7 @@ SQLite operations for image tags
 
 import sqlite3
 import os
+import re
 from contextlib import contextmanager
 from typing import List, Dict, Optional, Tuple
 
@@ -121,7 +122,10 @@ class Database:
     
     def search_by_tags(self, search_terms: List[Tuple[str, bool]]) -> List[str]:
         """
-        Search for files by tags using boolean logic
+        Search for files by tags using boolean logic with whole-word matching.
+        
+        Matches PHP reference behavior (api.php lines 274-281):
+        Uses REGEXP with word boundaries to avoid substring matches.
         
         search_terms: [(term, is_negative), ...]
         Example: [("beach", False), ("sunset", False), ("people", True)]
@@ -132,19 +136,21 @@ class Database:
         if not search_terms:
             return []
         
-        # Build WHERE clause with LIKE for each term
+        # Build WHERE clause with REGEXP for each term
         conditions = []
         params = []
         
         for term, is_negative in search_terms:
-            # Use word boundary logic: match whole words
-            # SQLite LIKE is case-insensitive by default with NOCASE collation
-            pattern = f"%{term}%"
+            # Word boundary pattern: (^|[^a-zA-Z0-9])term([^a-zA-Z0-9]|$)
+            # This ensures we match whole words only
+            # Matches PHP: $regex = "(^|[^a-zA-Z0-9])$escaped([^a-zA-Z0-9]|$)";
+            escaped_term = re.escape(term.lower())
+            pattern = fr"(^|[^a-zA-Z0-9]){escaped_term}([^a-zA-Z0-9]|$)"
             
             if is_negative:
-                conditions.append("tags NOT LIKE ?")
+                conditions.append("tags NOT REGEXP ?")
             else:
-                conditions.append("tags LIKE ?")
+                conditions.append("tags REGEXP ?")
             
             params.append(pattern)
         
@@ -154,6 +160,15 @@ class Database:
         """
         
         with self.get_connection() as conn:
+            # Register REGEXP function for SQLite
+            def regexp(pattern, string):
+                """Case-insensitive REGEXP for SQLite"""
+                if string is None:
+                    return False
+                return re.search(pattern, string, re.IGNORECASE) is not None
+            
+            conn.create_function("REGEXP", 2, regexp)
+            
             cursor = conn.execute(query, params)
             return [row['filename'] for row in cursor]
     

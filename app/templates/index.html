@@ -109,15 +109,7 @@
             color: white;
         }
 
-        /* Tag Chips for Active Filters */
-        .related-tags {
-            margin: 0 auto 20px auto;
-            padding: 0 20px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            align-items: center;
-        }
+
 
         .tag-chip {
             background: white;
@@ -248,21 +240,57 @@
             font-weight: normal;
         }
 
-        .toggle-chips-btn {
-            background: #f8f9fa;
-            border: 1px solid #dee2e6;
-            border-radius: 6px;
-            padding: 8px 16px;
-            cursor: pointer;
-            font-size: 13px;
-            color: #495057;
-            margin-bottom: 10px;
-            transition: all 0.2s;
+        /* Filter Bar - Full width simple divider */
+        .filter-bar-container {
+            width: 100%;
+            margin: 0;
+            padding: 0;
         }
 
-        .toggle-chips-btn:hover {
-            background: #e9ecef;
-            border-color: #adb5bd;
+        .filter-bar {
+            background: #fff;
+            border-top: 1px solid #e0e0e0;
+            border-bottom: 1px solid #e0e0e0;
+            padding: 8px 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: background 0.2s ease;
+        }
+
+        .filter-bar:hover {
+            background: #fafafa;
+        }
+
+        .filter-bar-label {
+            font-size: 10px;
+            font-weight: 600;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .filter-bar-icon {
+            font-size: 10px;
+            transition: transform 0.2s ease;
+            color: #ccc;
+        }
+
+        .filter-bar.expanded .filter-bar-icon {
+            transform: rotate(180deg);
+        }
+
+        /* Tags revealed section styling */
+        .related-tags {
+            margin: 0;
+            padding: 15px 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
         }
 
         .gallery {
@@ -309,6 +337,66 @@
             color: #666;
             word-break: break-all;
             line-height: 1.4;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .filename-text {
+            flex: 1;
+            min-width: 0;
+        }
+
+        /* Tag indicator icon */
+        .tag-indicator {
+            flex-shrink: 0;
+            width: 16px;
+            height: 16px;
+            position: relative;
+            cursor: help;
+        }
+
+        /* Tagged icon - gold/yellow filled tag */
+        .tag-indicator.tagged {
+            color: #f39c12;
+        }
+
+        /* Untagged icon - outline only */
+        .tag-indicator.untagged {
+            color: #ddd;
+        }
+
+        /* Tooltip */
+        .tag-indicator[data-tooltip]:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            right: 0;
+            margin-bottom: 5px;
+            padding: 6px 10px;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            font-size: 11px;
+            white-space: nowrap;
+            border-radius: 4px;
+            z-index: 1000;
+            pointer-events: none;
+            max-width: 300px;
+            white-space: normal;
+            word-wrap: break-word;
+        }
+
+        .tag-indicator[data-tooltip]:hover::before {
+            content: '';
+            position: absolute;
+            bottom: 100%;
+            right: 8px;
+            margin-bottom: -4px;
+            border: 5px solid transparent;
+            border-top-color: rgba(0, 0, 0, 0.9);
+            z-index: 1000;
+            pointer-events: none;
         }
 
         .loader {
@@ -450,6 +538,42 @@
         .cancel-button:hover {
             background: #c82333;
         }
+
+        /* Drag & Drop Upload Zone */
+        .drop-zone-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 123, 255, 0.9);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            backdrop-filter: blur(8px);
+        }
+
+        .drop-zone-overlay.active {
+            display: flex;
+        }
+
+        .drop-zone-content {
+            text-align: center;
+            color: white;
+            pointer-events: none;
+        }
+
+        .drop-zone-content h2 {
+            font-size: 48px;
+            margin-bottom: 20px;
+            font-weight: 300;
+        }
+
+        .drop-zone-content p {
+            font-size: 24px;
+            opacity: 0.9;
+        }
     </style>
 </head>
 
@@ -484,11 +608,12 @@
             </form>
         </div>
 
-        <!-- Tag Filter Toggle Button -->
-        <div style="max-width: 1400px; margin: 0 auto; padding: 0 20px;">
-            <button id="toggleChips" class="toggle-chips-btn" style="display:none;" onclick="toggleTagChips()">
-                <span id="toggleIcon">▼</span> <span id="toggleText">Show Tag Filters</span>
-            </button>
+        <!-- Tag Filter Bar -->
+        <div class="filter-bar-container">
+            <div id="filterBar" class="filter-bar" style="display:none;" onclick="toggleTagChips()">
+                <div class="filter-bar-label">TAG FILTER</div>
+                <span id="toggleIcon" class="filter-bar-icon">▼</span>
+            </div>
         </div>
 
         <!-- Tag Filter Chips Container -->
@@ -506,7 +631,25 @@
                     <img src="/thumb/{{ file.name }}" alt="{{ file.name }}" loading="lazy">
                 </div>
             </a>
-            <div class="filename">{{ file.name }}</div>
+            <div class="filename">
+                <span class="filename-text">{{ file.name }}</span>
+                {% if tags_map.get(file.name) %}
+                <span class="tag-indicator tagged" data-tooltip="{{ tags_map[file.name] }}" title="">
+                    <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                        <path
+                            d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z" />
+                    </svg>
+                </span>
+                {% else %}
+                <span class="tag-indicator untagged" data-tooltip="Untagged" title="">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <path
+                            d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z" />
+                    </svg>
+                </span>
+                {% endif %}
+            </div>
         </div>
         {% endfor %}
         {% else %}
@@ -579,6 +722,14 @@
             </div>
             <p class="progress-text" id="progress-text">0 / 0 images tagged</p>
             <button class="cancel-button" id="cancel-btn" onclick="cancelTagging()">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Drag & Drop Upload Overlay -->
+    <div id="dropZone" class="drop-zone-overlay">
+        <div class="drop-zone-content">
+            <h2>📁 Drop Images Here</h2>
+            <p>Release to upload to your gallery</p>
         </div>
     </div>
 
@@ -903,12 +1054,21 @@
                     console.log('DEBUG: tagsData from API:', tagsData); // Debug log
 
                     // Handle both formats: array of strings (legacy) or object with counts (standard)
-                    let tags = Array.isArray(tagsData) ? tagsData : Object.keys(tagsData);
+                    let tags;
+                    if (Array.isArray(tagsData)) {
+                        tags = tagsData;
+                    } else {
+                        // Sort tags by count (descending) to match PHP reference behavior
+                        tags = Object.keys(tagsData).sort((a, b) => tagsData[b] - tagsData[a]);
+                    }
 
                     if (tags.length === 0) {
-                        document.getElementById('toggleChips').style.display = 'none';
+                        document.getElementById('filterBar').style.display = 'none';
                         return;
                     }
+
+                    const tagCount = tags.length;
+                    const counts = tagsData;
 
                     const container = document.getElementById('relatedTags');
                     let html = '<span style="font-size:12px; color:#adb5bd; align-self:center; margin-right:5px; font-weight:600;">BROWSE TAGS:</span>';
@@ -934,7 +1094,12 @@
                     attachTagChipHandlers(container, {});
 
                     // Show toggle button
-                    document.getElementById('toggleChips').style.display = 'block';
+                    const filterBar = document.getElementById('filterBar');
+                    const toggleCount = document.getElementById('toggleCount');
+                    filterBar.style.display = 'flex';
+                    if (tagCount > 0) {
+                        toggleCount.textContent = `(${tagCount} tags)`;
+                    }
                 })
                 .catch(err => console.error('Error loading tags:', err));
         }
@@ -942,23 +1107,88 @@
         // Toggle chip visibility
         function toggleTagChips() {
             const chips = document.getElementById('relatedTags');
-            const icon = document.getElementById('toggleIcon');
-            const text = document.getElementById('toggleText');
+            const filterBar = document.getElementById('filterBar');
 
             if (chips.style.display === 'none') {
                 chips.style.display = 'flex';
-                icon.textContent = '▲';
-                text.textContent = 'Hide Tag Filters';
+                filterBar.classList.add('expanded');
             } else {
                 chips.style.display = 'none';
-                icon.textContent = '▼';
-                text.textContent = 'Show Tag Filters';
+                filterBar.classList.remove('expanded');
             }
         }
 
         // Make function globally accessible for onclick
         window.toggleTagChips = toggleTagChips;
 
+        // ===== Drag & Drop Upload =====
+        const dropZone = document.getElementById('dropZone');
+        let dragCounter = 0; // Track nested drag events
+
+        // Prevent default drag behaviors
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Show overlay on drag enter
+        document.body.addEventListener('dragenter', (e) => {
+            dragCounter++;
+            if (e.dataTransfer.types.includes('Files')) {
+                dropZone.classList.add('active');
+            }
+        });
+
+        // Hide overlay on drag leave
+        document.body.addEventListener('dragleave', () => {
+            dragCounter--;
+            if (dragCounter === 0) {
+                dropZone.classList.remove('active');
+            }
+        });
+
+        // Handle drop
+        document.body.addEventListener('drop', async (e) => {
+            dragCounter = 0;
+            dropZone.classList.remove('active');
+
+            const files = Array.from(e.dataTransfer.files);
+            const imageFiles = files.filter(file =>
+                file.type.startsWith('image/') ||
+                /\.(jpg|jpeg|png|gif|webp)$/i.test(file.name)
+            );
+
+            if (imageFiles.length === 0) {
+                alert('No valid image files found');
+                return;
+            }
+
+            // Upload files
+            const formData = new FormData();
+            imageFiles.forEach(file => formData.append('files', file));
+
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'ok') {
+                    alert(`Successfully uploaded ${result.count} image(s)!\nReloading gallery...`);
+                    window.location.reload();
+                } else {
+                    alert('Upload failed: ' + (result.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Upload error: ' + error.message);
+            }
+        });
         // Load related tags (when searching)
         function loadRelatedTags() {
             const query = '{{ search_query|safe }}';
@@ -986,10 +1216,11 @@
                     console.log('DEBUG: apiTags', apiTags); // Debug logging
                     const container = document.getElementById('relatedTags');
 
-                    // 3. Merge lists - active tags first, then suggestions
+                    // 3. Merge lists - active tags first, then suggestions sorted by count
                     const displayList = [];
                     const seen = {};
 
+                    // Add active tags first (from search query)
                     for (const t in activeState) {
                         displayList.push({
                             tag: t,
@@ -999,16 +1230,25 @@
                         seen[t] = true;
                     }
 
+                    // Add remaining tags sorted by count (descending)
+                    const remainingTags = [];
                     for (const t in apiTags) {
                         if (!seen[t]) {
-                            displayList.push({
-                                tag: t,
-                                state: 'neutral',
-                                count: apiTags[t]
-                            });
-                            seen[t] = true;
+                            remainingTags.push({ tag: t, count: apiTags[t] });
                         }
                     }
+
+                    // Sort by count descending
+                    remainingTags.sort((a, b) => b.count - a.count);
+
+                    // Add to display list
+                    remainingTags.forEach(item => {
+                        displayList.push({
+                            tag: item.tag,
+                            state: 'neutral',
+                            count: item.count
+                        });
+                    });
 
                     if (displayList.length === 0) return;
 

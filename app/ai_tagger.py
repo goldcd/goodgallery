@@ -83,7 +83,7 @@ class AITagger:
                     cache_dir=self.cache_dir
                 )
             
-            print("✓ Model loaded successfully!")
+            print("[OK] Model loaded successfully!")
             self.is_loaded = True
             
             # Optional: Log memory just for confirmation (not in reference, but harmless)
@@ -254,12 +254,66 @@ class AITagger:
         return cut_str.split(',')
 
     def unload_model(self):
+        """
+        Comprehensive GPU memory cleanup following PyTorch best practices.
+        
+        The key issue: PyTorch's memory allocator caches memory for reuse.
+        Even after del + empty_cache(), nvidia-smi may show cached memory.
+        This is normal, BUT we want to truly release it for other applications.
+        """
         if self.model is not None:
+            print("🧹 Unloading model and releasing GPU memory...")
+            
+            # Step 1: Move model to CPU first
+            # This forces PyTorch to transfer all tensors from GPU->CPU,
+            # which triggers GPU memory deallocation
+            try:
+                self.model = self.model.to('cpu')
+                print("  [OK] Model moved to CPU")
+            except Exception as e:
+                print(f"  Warning during CPU transfer: {e}")
+            
+            # Step 2: Delete all references explicitly
+            # Remove both model and processor references
             del self.model
-            del self.processor
             self.model = None
+            
+            if hasattr(self, 'processor') and self.processor is not None:
+                del self.processor
             self.processor = None
+            
             self.is_loaded = False
+            
+            # Step 3: Force Python garbage collection TWICE
+            # First gc.collect() might not catch circular references
+            # Second pass ensures everything is truly freed
+            import gc
+            gc.collect()
+            gc.collect()
+            print("  [OK] Python GC completed")
+            
+            # Step 4: CUDA cleanup sequence
             if torch.cuda.is_available():
+                # Wait for all CUDA operations to complete
+                torch.cuda.synchronize()
+                
+                # Empty the CUDA cache (frees cached but unused blocks)
                 torch.cuda.empty_cache()
-            print("🧹 Model unloaded")
+                
+                # Additional cleanup for multi-process scenarios
+                try:
+                    torch.cuda.ipc_collect()
+                except:
+                    pass  # Not all PyTorch versions have this
+                
+                # Reset memory stats (helps with fragmentation tracking)
+                try:
+                    torch.cuda.reset_peak_memory_stats()
+                    torch.cuda.reset_accumulated_memory_stats()
+                except:
+                    pass
+                
+                print("  [OK] CUDA cache cleared")
+            
+            print("[CLEANUP] Model unloaded - GPU memory should be released")
+            print("          (Note: nvidia-smi may show small residual PyTorch overhead)")

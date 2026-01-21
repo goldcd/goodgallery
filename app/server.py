@@ -11,6 +11,7 @@ if __name__ == '__main__':
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import yaml
+import json
 from flask import Flask, render_template, request, jsonify, send_file, abort
 from werkzeug.utils import secure_filename
 from urllib.parse import unquote, quote
@@ -126,8 +127,15 @@ def index():
     stats = db.get_stats()
     total_files = len(gallery.get_file_index())
     
+    # Get tags for all files in current page
+    tags_map = {}
+    for file in page_files:
+        tags_str = db.get_tags(file['name'])
+        tags_map[file['name']] = tags_str if tags_str else None
+    
     return render_template('index.html',
         files=page_files,
+        tags_map=tags_map,
         search_query=search_query,
         search_type=search_type,
         page=page,
@@ -399,28 +407,32 @@ def api_delete():
 @app.route('/api/upload', methods=['POST'])
 def api_upload():
     """Handle photo uploads via drag-and-drop"""
-    if 'files' not in request.files:
-        return jsonify({'error': 'No files provided'}), 400
-    
-    files = request.files.getlist('files')
-    uploaded = []
-    
-    for file in files:
-        if file.filename == '':
-            continue
+    try:
+        if 'files' not in request.files:
+            return jsonify({'error': 'No files provided'}), 400
         
-        # Check if allowed extension
-        ext = os.path.splitext(file.filename)[1].lower().lstrip('.')
-        if ext not in config['gallery']['allowed_extensions']:
-            continue
+        files = request.files.getlist('files')
+        uploaded = []
         
-        # Save to photos directory
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(config['gallery']['photo_dir'], filename)
-        file.save(filepath)
-        uploaded.append(filename)
-    
-    return jsonify({'status': 'ok', 'uploaded': uploaded, 'count': len(uploaded)})
+        for file in files:
+            if file.filename == '':
+                continue
+            
+            # Check if allowed extension
+            ext = os.path.splitext(file.filename)[1].lower().lstrip('.')
+            if ext not in config['gallery']['allowed_extensions']:
+                continue
+            
+            # Save to photos directory
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(config['gallery']['photo_directory'], filename)
+            file.save(filepath)
+            uploaded.append(filename)
+        
+        return jsonify({'status': 'ok', 'uploaded': uploaded, 'count': len(uploaded)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 
 # --- MANUAL TAGGING STATE ---
@@ -499,7 +511,17 @@ def api_gpu_status():
 
 
 def manual_tagging_worker():
-    """Background worker for manual tagging"""
+    """
+    Background worker for manual tagging using subprocess approach.
+    
+    Spawns ONE tag_worker.py subprocess for ALL untagged images.
+    Worker handles batching internally, then exits to release GPU memory.
+    
+    This is more efficient than spawning per-batch (avoids reloading model).
+    """
+    import tempfile
+    import subprocess
+    
     try:
         # Get untagged files
         all_files = gallery.get_file_index()
@@ -520,58 +542,127 @@ def manual_tagging_worker():
                 tagging_state['status'] = 'No untagged images found'
             return
         
-        # Load AI model
-        with tagging_lock:
-            tagging_state['status'] = 'Loading AI model...'
-        
-        tagger =get_ai_tagger()
-        if not tagger.is_loaded:
-            tagger.load_model()
-        
-        # Process in batches
-        batch_size = config['ai']['batch_size']
+        # Prepare ALL image paths
         total = len(untagged)
+        image_paths = [os.path.normpath(os.path.join(gallery.photo_dir, f)) for f in untagged]
         
-        for i in range(0, total, batch_size):
-            # Check for cancellation
+        # Prepare model configuration
+        model_config = {
+            'model': config['ai'].get('model', 'llava-hf/llava-1.5-7b-hf'),
+            'use_quantization': config['ai'].get('use_quantization', True),
+            'batch_size': config['ai'].get('batch_size', 15),
+            'tagging_prompt': config['ai'].get('tagging_prompt'),
+            'cache_dir': os.path.join(ROOT_DIR, 'models')
+        }
+        
+        # Create temporary files for worker communication
+        config_fd, config_file = tempfile.mkstemp(suffix='.json', text=True)
+        output_fd, output_file = tempfile.mkstemp(suffix='.json', text=True)
+        
+        try:
+            # Write worker configuration with ALL images
+            worker_config = {
+                'image_paths': image_paths,
+                'output_file': output_file,
+                'model_config': model_config,
+                'total_images': total  # So worker can report progress
+            }
+            
+            with os.fdopen(config_fd, 'w') as f:
+                json.dump(worker_config, f)
+            
+            os.close(output_fd)  # Close FD, worker will write to file
+            
+            # Spawn worker process - it will handle ALL batches internally
+            worker_script = os.path.join(ROOT_DIR, 'app', 'tag_worker.py')
+            
             with tagging_lock:
-                if tagging_state['cancel_requested']:
-                    tagging_state['running'] = False
-                    tagging_state['status'] = 'Cancelled by user'
-                    break
+                tagging_state['status'] = f'Starting worker subprocess for {total} images...'
             
-            batch = untagged[i:i+batch_size]
-            image_paths = [os.path.normpath(os.path.join(gallery.photo_dir, f)) for f in batch]
+            # Force UTF-8 encoding for subprocess to avoid Windows cp1252 issues
+            env = os.environ.copy()
+            env['PYTHONIOENCODING'] = 'utf-8'
             
-            # Update status
-            with tagging_lock:
-                tagging_state['status'] = f'Tagging batch {i//batch_size + 1}...'
+            print(f"[SERVER] Spawning worker for {total} images...")
             
-            # Tag batch
-            try:
-                results = tagger.tag_batch(image_paths)
-                db.save_tags_batch(results)
+            # Start subprocess - worker will process all batches
+            process = subprocess.Popen(
+                [sys.executable, worker_script, config_file],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env
+            )
+            
+            # Poll subprocess and update progress
+            # Worker will write progress to a status file that we can monitor
+            import time
+            while process.poll() is None:
+                # Check for cancellation
+                with tagging_lock:
+                    if tagging_state['cancel_requested']:
+                        process.terminate()
+                        process.wait(timeout=5)
+                        tagging_state['running'] = False
+                        tagging_state['status'] = 'Cancelled by user'
+                        return
                 
-                # Update progress
+                # Update status (worker is processing)
                 with tagging_lock:
-                    tagging_state['current'] = min(i + batch_size, total)
-            except Exception as e:
-                with tagging_lock:
-                    tagging_state['error'] = str(e)
-                    tagging_state['running'] = False
-                return
-        
-        # Unload model to free GPU memory
-        if config['ai'].get('keep_model_loaded', False) == False:
+                    tagging_state['status'] = f'Worker processing images...'
+                
+                time.sleep(1)  # Poll every second
+            
+            # Process completed - get output
+            stdout, stderr = process.communicate()
+            
+            if process.returncode != 0:
+                error_msg = f"Worker failed (exit {process.returncode})"
+                if stderr:
+                    error_msg += f"\nStderr: {stderr}"
+                if stdout:
+                    error_msg += f"\nStdout: {stdout}"
+                raise Exception(error_msg)
+            
+            # Read results from worker
+            with open(output_file, 'r') as f:
+                results = json.load(f)
+            
+            # Save tags to database
+            db.save_tags_batch(results)
+            
+            # Update progress
             with tagging_lock:
-                tagging_state['status'] = 'Unloading model...'
-            tagger.unload_model()
+                tagging_state['current'] = total
+            
+            print(f"[SERVER] Worker complete - processed {len(results)} images, GPU memory released")
+            
+        except subprocess.TimeoutExpired:
+            with tagging_lock:
+                tagging_state['error'] = 'Worker timeout'
+                tagging_state['running'] = False
+            return
+        except Exception as e:
+            with tagging_lock:
+                tagging_state['error'] = str(e)
+                tagging_state['running'] = False
+            return
+        finally:
+            # Cleanup temporary files
+            try:
+                os.unlink(config_file)
+            except:
+                pass
+            try:
+                os.unlink(output_file)
+            except:
+                pass
         
         # Complete
         with tagging_lock:
             if not tagging_state['cancel_requested']:
                 tagging_state['running'] = False
-                tagging_state['status'] = f'✓ Tagged {total} images'
+                tagging_state['status'] = f'Tagged {total} images - GPU memory released'
                 tagging_state['current'] = total
     
     except Exception as e:
@@ -589,7 +680,7 @@ def auto_tag_on_startup():
     
     # GUARD: Don't run in Flask's reloader parent process
     # When debug=True, Flask spawns a parent + child process. 
-    # We only want to load the model in the actual worker process.
+    # We only want to run tagging in the actual worker process.
     if os.environ.get('WERKZEUG_RUN_MAIN') != 'true' and app.debug:
         return  # Skip in parent reloader process
     
@@ -615,33 +706,9 @@ def auto_tag_on_startup():
         print(f"   Found {len(untagged)} untagged images")
         print("   Starting AI tagging (this may take a while)...\n")
         
-        # Load AI model
-        tagger = get_ai_tagger()
-        if not tagger.is_loaded:
-            tagger.load_model()
-        
-        # Process in batches
-        batch_size = config['ai']['batch_size']
-        total = len(untagged)
-        
-        for i in range(0, total, batch_size):
-            batch = untagged[i:i+batch_size]
-            image_paths = [os.path.normpath(os.path.join(gallery.photo_dir, f)) for f in batch]
-            
-            # Tag batch
-            results = tagger.tag_batch(image_paths)
-            db.save_tags_batch(results)
-            
-            # Progress
-            processed = min(i + batch_size, total)
-            print(f"   Tagged {processed}/{total} images...")
-        
-        print(f"\n✓ Auto-tagging complete! Tagged {total} images")
-        
-        # Unload model to free GPU memory
-        if config['ai'].get('keep_model_loaded', False) == False:
-            print("🧹 Unloading model to free GPU memory...")
-            tagger.unload_model()
+        # Use the manual tagging worker (subprocess approach)
+        # This ensures GPU memory is properly released
+        manual_tagging_worker()
         
     except Exception as e:
         print(f"\n⚠️  Auto-tagging failed: {e}")
@@ -672,14 +739,18 @@ def run_server(host='127.0.0.1', port=None, debug=False):
         if watcher:
             print("👁️  File monitoring: enabled")
     
-    # Check auto-tag setting
+    # Check auto-tag setting (disabled by default for better UX)
+    # Users can trigger tagging manually from UI
     if config['ai'].get('auto_tag', False):
-        print("🤖 Auto-tagging: enabled")
-        
-        # Start auto-tagging in background
-        import threading
-        thread = threading.Thread(target=auto_tag_on_startup, daemon=True)
-        thread.start()
+        print("🤖 Auto-tagging: disabled (use UI button to start tagging)")
+        # Auto-tagging disabled - provides better UX:
+        # - Fast server startup
+        # - Users see untagged count immediately
+        # - Clear manual control via UI button
+        # 
+        # import threading
+        # thread = threading.Thread(target=auto_tag_on_startup, daemon=True)
+        # thread.start()
     else:
         print("🤖 Auto-tagging: disabled")
     
