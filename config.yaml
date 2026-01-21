@@ -1,0 +1,55 @@
+# GoodGallery Configuration
+
+gallery:
+  # Path to your photo directory
+  photo_directory: "./photos"
+  
+  # Web server port
+  port: 5000
+  
+  # Monitor photos directory for changes (auto-detect additions/deletions)
+  watch_for_changes: true
+  
+  # Thumbnail settings
+  thumbnail_size: 200
+  images_per_page: 100
+  
+  # Allowed image extensions
+  allowed_extensions:
+    - jpg
+    - jpeg
+    - png
+    - gif
+    - webp
+
+ai:
+  # LLaVA model to use (automatically downloads on first run)
+  model: "llava-hf/llava-1.5-7b-hf"
+  
+  # Auto-tag images on startup
+  auto_tag: true
+  
+  # Keep model loaded in GPU memory (faster but uses more VRAM)
+  keep_model_loaded: false
+  
+  # Number of images to process per GPU batch
+  batch_size: 15
+  
+  # Enable 4-bit quantization (fits in ~6GB VRAM)
+  use_quantization: true
+  
+  # Tagging prompt for LLaVA (customize to change tagging behavior)
+  # This prompt is sent to the AI model for each image.
+  # You can modify this to change what the AI focuses on when analyzing images.
+  # The prompt must follow the LLaVA conversation format: "USER: <image>\n...text...\nASSISTANT:"
+  tagging_prompt: |
+    USER: <image>
+    Analyze the image and generate a single, comprehensive, comma-separated list of keywords, listed in their descending importance as a description of the image
+    Include keywords for: main objects, people (including names of famous figures if recognized), actions, location, time of day, lighting, artistic style, mood, fictional characters, memes, distinctive features and anything else that seems to be a relevant keyword to search on this image by.
+    Do not transcribe text. Do not use categories or labels. Just keywords.
+    Example: car, woman, running, beach, sunny, sketch, vintage, afternoon
+    ASSISTANT:
+
+database:
+  # SQLite database path
+  path: "data/gallery.db"

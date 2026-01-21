@@ -21,7 +21,7 @@ data/
 *.db-journal
 
 # Config (users create their own)
-config.yaml
+# config.yaml
 
 # Thumbnails
 static/thumbnails/

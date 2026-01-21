@@ -1,0 +1,1 @@
+git archive main | tar -x -C E:\test
