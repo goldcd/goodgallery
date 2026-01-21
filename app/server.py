@@ -69,12 +69,18 @@ def get_ai_tagger():
     """Lazy load AI tagger (only when needed)"""
     global ai_tagger
     if ai_tagger is None:
+        prompt_from_config = config['ai'].get('tagging_prompt')
         ai_tagger = AITagger(
             model_id=config['ai']['model'],
             use_quantization=config['ai']['use_quantization'],
             batch_size=config['ai']['batch_size'],
-            tagging_prompt=config['ai'].get('tagging_prompt')
+            tagging_prompt=prompt_from_config
         )
+        # Debug: Verify prompt source
+        if prompt_from_config:
+            print(f"✓ Using custom tagging prompt from config ({len(prompt_from_config)} chars)")
+        else:
+            print("ℹ Using default tagging prompt (config not set)")
     return ai_tagger
 
 

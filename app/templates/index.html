@@ -495,13 +495,7 @@
         <div id="relatedTags" class="related-tags" style="display:none;"></div>
     </div>
 
-    <!-- Related Tags Filter Chips -->
-    <div style="max-width: 1400px; margin: 0 auto; padding: 0 20px;">
-        <button id="toggleChips" class="toggle-chips-btn" style="display:none;" onclick="toggleTagChips()">
-            <span id="toggleIcon">▼</span> <span id="toggleText">Show Tag Filters</span>
-        </button>
-    </div>
-    <div id="relatedTags" class="related-tags" style="display:none;"></div>
+
 
     <div class="gallery">
         {% if files %}
@@ -898,13 +892,17 @@
         function loadCurrentViewTags() {
             const query = searchInput.value.trim() || '';
 
-            // Use related_tags API which returns tags from current filtered results
-            const url = query ? `/api/related_tags?q=${encodeURIComponent(query)}` : '/api/tags?limit=30';
+            // ALWAYS use related_tags API (returns {tag: count}) to ensure we get counts
+            // ALWAYS use related_tags API (returns {tag: count}) to ensure we get counts
+            // server.py handles empty query by returning top tags
+            const url = `/api/related_tags?q=${encodeURIComponent(query)}`;
 
             fetch(url)
                 .then(r => r.json())
                 .then(tagsData => {
-                    // Handle both formats: array of strings or object with counts
+                    console.log('DEBUG: tagsData from API:', tagsData); // Debug log
+
+                    // Handle both formats: array of strings (legacy) or object with counts (standard)
                     let tags = Array.isArray(tagsData) ? tagsData : Object.keys(tagsData);
 
                     if (tags.length === 0) {
@@ -916,7 +914,14 @@
                     let html = '<span style="font-size:12px; color:#adb5bd; align-self:center; margin-right:5px; font-weight:600;">BROWSE TAGS:</span>';
 
                     tags.forEach(tag => {
-                        const count = typeof tagsData === 'object' ? ` <span class="count">${tagsData[tag]}</span>` : '';
+                        // FIX: Ensure we only look up counts if tagsData is a dictionary (not an array)
+                        const isDict = typeof tagsData === 'object' && !Array.isArray(tagsData);
+                        const countVal = isDict ? tagsData[tag] : null;
+
+                        const count = (countVal !== null && countVal !== undefined)
+                            ? ` <span class="count">${countVal}</span>`
+                            : '';
+
                         html += `<div class="tag-chip" data-tag="${tag}">` +
                             `<span class="chip-label">${tag}${count}</span>` +
                             `<span class="chip-btn btn-remove" title="Remove">✕</span>` +
@@ -951,6 +956,9 @@
             }
         }
 
+        // Make function globally accessible for onclick
+        window.toggleTagChips = toggleTagChips;
+
         // Load related tags (when searching)
         function loadRelatedTags() {
             const query = '{{ search_query|safe }}';
@@ -975,6 +983,7 @@
             fetch('/api/related_tags?q=' + encodeURIComponent(query))
                 .then(r => r.json())
                 .then(apiTags => {
+                    console.log('DEBUG: apiTags', apiTags); // Debug logging
                     const container = document.getElementById('relatedTags');
 
                     // 3. Merge lists - active tags first, then suggestions
@@ -1044,118 +1053,9 @@
             }, 100);
         }
 
-        // ===== Drag-and-Drop Upload =====
-        const galleryEl = document.querySelector('.gallery');
-        let dragCounter = 0;
 
-        // Prevent default drag behavior
-        document.addEventListener('dragover', (e) => e.preventDefault());
-        document.addEventListener('dragenter', (e) => e.preventDefault());
 
-        // Visual feedback when dragging over gallery
-        galleryEl.addEventListener('dragenter', (e) => {
-            dragCounter++;
-            galleryEl.style.opacity = '0.5';
-            galleryEl.style.outline = '3px dashed #007bff';
-        });
 
-        galleryEl.addEventListener('dragleave', (e) => {
-            dragCounter--
-                ;
-            if (dragCounter === 0) {
-                galleryEl.style.opacity = '1';
-                galleryEl.style.outline = 'none';
-            }
-        });
-
-        // Handle drop
-        galleryEl.addEventListener('drop', async (e) => {
-            e.preventDefault();
-            dragCounter = 0;
-            galleryEl.style.opacity = '1';
-            galleryEl.style.outline = 'none';
-
-            const formData = new FormData();
-            let hasImages = false;
-
-            for (const file of e.dataTransfer.files) {
-                if (file.type.startsWith('image/')) {
-                    formData.append('files', file);
-                    hasImages = true;
-                }
-            }
-
-            if (hasImages) {
-                try {
-                    const response = await fetch('/api/upload', {
-                        method: 'POST',
-                        body: formData
-                    });
-                    const data = await response.json();
-                    console.log(`Uploaded ${data.count} photos`);
-                    // File monitor will detect → auto-refresh
-                } catch (err) {
-                    console.error('Upload error:', err);
-                    alert('Error uploading photos');
-                }
-            }
-        });
-
-        // ===== Drag-and-Drop Upload =====
-        const galleryEl = document.querySelector('.gallery');
-        let dragCounter = 0;
-
-        // Prevent default drag behavior
-        document.addEventListener('dragover', (e) => e.preventDefault());
-        document.addEventListener('dragenter', (e) => e.preventDefault());
-
-        // Visual feedback when dragging over gallery
-        galleryEl.addEventListener('dragenter', (e) => {
-            dragCounter++;
-            galleryEl.style.opacity = '0.5';
-            galleryEl.style.outline = '3px dashed #007bff';
-        });
-
-        galleryEl.addEventListener('dragleave', (e) => {
-            dragCounter--;
-            if (dragCounter === 0) {
-                galleryEl.style.opacity = '1';
-                galleryEl.style.outline = 'none';
-            }
-        });
-
-        // Handle drop
-        galleryEl.addEventListener('drop', async (e) => {
-            e.preventDefault();
-            dragCounter = 0;
-            galleryEl.style.opacity = '1';
-            galleryEl.style.outline = 'none';
-
-            const formData = new FormData();
-            let hasImages = false;
-
-            for (const file of e.dataTransfer.files) {
-                if (file.type.startsWith('image/')) {
-                    formData.append('files', file);
-                    hasImages = true;
-                }
-            }
-
-            if (hasImages) {
-                try {
-                    const response = await fetch('/api/upload', {
-                        method: 'POST',
-                        body: formData
-                    });
-                    const data = await response.json();
-                    console.log(`Uploaded ${data.count} photos`);
-                    // File monitor will detect → auto-refresh
-                } catch (err) {
-                    console.error('Upload error:', err);
-                    alert('Error uploading photos');
-                }
-            }
-        });
 
         // ===== Auto-Refresh on File Changes =====
         let initialFileCount = {{ total_files }};

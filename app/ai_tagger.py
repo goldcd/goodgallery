@@ -44,6 +44,7 @@ class AITagger:
             return
         
         print("Loading LLaVA model (this may take a while)...")
+        print(f"  Using tagging prompt: {self.tagging_prompt[:80]}..." if len(self.tagging_prompt) > 80 else f"  Using tagging prompt: {self.tagging_prompt}")
         
         try:
             # Quantization config for 4-bit loading (fits in ~6GB VRAM)
