@@ -46,7 +46,8 @@ ai:
     USER: <image>
     Analyze the image and generate a single, comprehensive, comma-separated list of keywords, listed in their descending importance as a description of the image
     Include keywords for: main objects, people (including names of famous figures if recognized), actions, location, time of day, lighting, artistic style, mood, fictional characters, memes, distinctive features and anything else that seems to be a relevant keyword to search on this image by.
-    Do not transcribe text. Do not use categories or labels. Just keywords.
+    Do NOT number or bullet the response list. 
+    Before returning the list, check that it complies to the rules I have defined. 
     Example: car, woman, running, beach, sunny, sketch, vintage, afternoon
     ASSISTANT:
 

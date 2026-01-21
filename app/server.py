@@ -44,6 +44,7 @@ config = load_config()
 PHOTO_DIR = os.path.normpath(os.path.join(ROOT_DIR, config['gallery']['photo_directory']))
 DATA_DIR = os.path.join(ROOT_DIR, 'data')
 DB_PATH = os.path.join(DATA_DIR, 'gallery.db')
+# DB_PATH = os.path.join(DATA_DIR, 'verify_logic.db') # SWITCHED TO SYNTHETIC DB
 
 # Override config to use absolute path for server logic
 config['gallery']['photo_directory'] = PHOTO_DIR

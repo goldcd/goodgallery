@@ -182,8 +182,6 @@ class AITagger:
                 # Truncate Logic
                 tags = self._truncate_tags(tags)
                 
-                print(f"  [{filename}] -> {tags[:5] + ['...'] if len(tags) > 5 else tags}")
-                
                 results.append({"filename": filename, "tags": tags})
                 
         except Exception as e:
@@ -196,8 +194,10 @@ class AITagger:
 
     def _clean_tags(self, response: str) -> List[str]:
         """Reference: tagger_client_v2.py:147-183"""
+        # Replace newlines with commas to handle list formats
         response = response.replace('\n', ',')
         
+        # Remove common chatty prefixes/headers
         remove_patterns = [
             r'main objects\s*(&\s*people)?\s*:', 
             r'actions\s*(&\s*activities)?\s*:', 
@@ -205,7 +205,11 @@ class AITagger:
             r'time\s*(of day)?\s*(&\s*lighting)?\s*:',
             r'art style\s*(&\s*mood)?\s*:',
             r'distinctive features\s*:',
-            r'\d+\.\s*', 
+            r'keywords\s*:',
+            # Remove numbering patterns like "1.", "1)", "[1]", or "- "
+            r'\b\d+\.\s*', 
+            r'\b\d+\)\s*',
+            r'\[\d+\]\s*',
             r'-\s*'
         ]
         
@@ -213,15 +217,26 @@ class AITagger:
         for pat in remove_patterns:
             clean_response = re.sub(pat, '', clean_response, flags=re.IGNORECASE)
             
+        # Split by comma
         raw_tags = [tag.strip() for tag in clean_response.split(',')]
+        
         seen = set()
         tags = []
         
         for tag in raw_tags:
             tag_lower = tag.lower().strip()
-            if ':' in tag_lower: continue
             
-            if tag_lower and tag_lower not in seen and len(tag_lower) > 1:
+            # Skip empty or weird tags
+            if not tag_lower: continue
+            if ':' in tag_lower: continue # Skip ignored categories
+            
+            # Skip tags that are JUST numbers (e.g. "12", "11")
+            if tag_lower.isdigit(): continue
+            
+            # Skip single characters (unless it's something meaningful, but usually noise)
+            if len(tag_lower) < 2: continue
+            
+            if tag_lower not in seen:
                 seen.add(tag_lower)
                 tags.append(tag_lower)
         
