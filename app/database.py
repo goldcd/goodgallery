@@ -141,11 +141,16 @@ class Database:
         params = []
         
         for term, is_negative in search_terms:
-            # Word boundary pattern: (^|[^a-zA-Z0-9])term([^a-zA-Z0-9]|$)
-            # This ensures we match whole words only
-            # Matches PHP: $regex = "(^|[^a-zA-Z0-9])$escaped([^a-zA-Z0-9]|$)";
+            # Match complete tags in comma-separated list
+            # Pattern matches:
+            # - ^term$ (entire string is just this tag)
+            # - ^term, (tag at start of list)
+            # - ,term, (tag in middle of list)  
+            # - ,term$ (tag at end of list)
+            # With optional whitespace around commas
             escaped_term = re.escape(term.lower())
-            pattern = fr"(^|[^a-zA-Z0-9]){escaped_term}([^a-zA-Z0-9]|$)"
+            # Match tag boundaries: start/end of string OR comma (with optional spaces)
+            pattern = fr"(^|\s*,\s*){escaped_term}(\s*,\s*|$)"
             
             if is_negative:
                 conditions.append("tags NOT REGEXP ?")

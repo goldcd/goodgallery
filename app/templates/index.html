@@ -367,39 +367,63 @@
             color: #ddd;
         }
 
-        /* Tooltip - positioned to extend over other items */
-        .tag-indicator[data-tooltip]:hover::after {
-            content: attr(data-tooltip);
-            position: fixed;
-            bottom: auto;
-            top: auto;
-            right: auto;
-            left: auto;
-            margin-bottom: 5px;
-            padding: 8px 12px;
+        /* Tag overlay on thumbnail hover */
+        .tag-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
             background: rgba(0, 0, 0, 0.95);
-            color: white;
-            font-size: 12px;
-            border-radius: 6px;
-            z-index: 10000;
-            pointer-events: none;
-            max-width: 400px;
-            min-width: 150px;
-            white-space: normal;
-            word-wrap: break-word;
-            line-height: 1.4;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            transform: translateX(-50%) translateY(-100%);
+            display: none;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: flex-start;
+            padding: 15px;
+            overflow-y: auto;
+            z-index: 5;
         }
 
-        .tag-indicator[data-tooltip]:hover::before {
-            content: '';
-            position: fixed;
-            border: 6px solid transparent;
-            border-top-color: rgba(0, 0, 0, 0.95);
-            z-index: 10000;
-            pointer-events: none;
-            transform: translateX(-50%);
+        .thumb-container:hover .tag-overlay {
+            display: flex;
+        }
+
+        .thumb-container:hover img {
+            opacity: 0;
+        }
+
+        .tag-overlay-title {
+            font-size: 11px;
+            color: #888;
+            margin-bottom: 8px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            flex-shrink: 0;
+        }
+
+        .tag-overlay-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            width: 100%;
+        }
+
+        .tag-overlay-list li {
+            color: white;
+            font-size: 13px;
+            padding: 4px 0;
+            line-height: 1.4;
+        }
+
+        .tag-overlay.untagged {
+            justify-content: center;
+            align-items: center;
+        }
+
+        .tag-overlay.untagged .tag-overlay-title {
+            margin: 0;
+            font-size: 14px;
+            color: #666;
         }
 
         .loader {
@@ -644,7 +668,8 @@
             </div>
 
             <button id="tag-btn" class="tag-button" onclick="startTagging()">
-                🏷️ Tag <span class="count" id="untagged-count">{{ total_files - tagged_count }}</span> Untagged
+                🏷️ Tag <span class="count" id="untagged-count">{{ [0, total_files - tagged_count]|max }}</span>
+                Untagged
             </button>
 
             <form class="search-box" method="get">
@@ -685,19 +710,33 @@
             <a href="/img/{{ file.name }}" target="_blank">
                 <div class="thumb-container">
                     <img src="/thumb/{{ file.name }}" alt="{{ file.name }}" loading="lazy">
+                    {% if tags_map.get(file.name) %}
+                    <div class="tag-overlay">
+                        <div class="tag-overlay-title">TAGS</div>
+                        <ul class="tag-overlay-list">
+                            {% for tag in tags_map[file.name].split(',') %}
+                            <li>{{ tag.strip() }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% else %}
+                    <div class="tag-overlay untagged">
+                        <div class="tag-overlay-title">UNTAGGED</div>
+                    </div>
+                    {% endif %}
                 </div>
             </a>
             <div class="filename">
                 <span class="filename-text">{{ file.name }}</span>
                 {% if tags_map.get(file.name) %}
-                <span class="tag-indicator tagged" data-tooltip="{{ tags_map[file.name] }}" title="">
+                <span class="tag-indicator tagged" title="Hover thumbnail to view tags">
                     <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                         <path
                             d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z" />
                     </svg>
                 </span>
                 {% else %}
-                <span class="tag-indicator untagged" data-tooltip="Untagged" title="">
+                <span class="tag-indicator untagged" title="Untagged">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         xmlns="http://www.w3.org/2000/svg">
                         <path
