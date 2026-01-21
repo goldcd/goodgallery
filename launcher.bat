@@ -10,20 +10,32 @@ echo    GoodGallery Launcher (Windows)
 echo ============================================================
 echo.
 
+echo.
+
 REM Define paths
 set "ROOT_DIR=%~dp0"
 set "RUNTIME_DIR=%ROOT_DIR%runtime"
 set "PYTHON_DIR=%RUNTIME_DIR%\python-3.11.9"
 set "PYTHON_EXE=%PYTHON_DIR%\python.exe"
+set "PIP_EXE=%PYTHON_DIR%\Scripts\pip.exe"
 set "BOOTSTRAP_SCRIPT=%ROOT_DIR%bootstrap\launcher_core.py"
 
-REM Check if portable Python exists
+REM Check for Python
 if exist "%PYTHON_EXE%" (
-    echo [*] Using portable Python: %PYTHON_DIR%
-    echo.
-    goto :launch
+    echo [*] Found portable Python: %PYTHON_DIR%
+) else (
+    goto :download_python
 )
 
+REM Check for Pip (repair if needed)
+if not exist "%PIP_EXE%" (
+    echo [!] Python found but pip is missing. repairing...
+    goto :install_pip
+)
+
+goto :launch
+
+:download_python
 REM Download portable Python
 echo [*] Portable Python not found - downloading...
 echo     This is a one-time setup (~30MB download)
@@ -63,6 +75,7 @@ if errorlevel 1 (
 REM Clean up archive
 del "%PYTHON_ARCHIVE%" >nul 2>&1
 
+:install_pip
 REM Install pip into embedded Python
 echo [*] Installing pip...
 powershell -Command "& {Invoke-WebRequest -Uri 'https://bootstrap.pypa.io/get-pip.py' -OutFile '%PYTHON_DIR%\get-pip.py' -UseBasicParsing}"

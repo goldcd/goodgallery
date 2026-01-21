@@ -70,11 +70,17 @@ def get_ai_tagger():
     global ai_tagger
     if ai_tagger is None:
         prompt_from_config = config['ai'].get('tagging_prompt')
+        
+        # Use local models directory to keep it contained in project
+        models_dir = os.path.join(ROOT_DIR, 'models')
+        os.makedirs(models_dir, exist_ok=True)
+        
         ai_tagger = AITagger(
             model_id=config['ai']['model'],
             use_quantization=config['ai']['use_quantization'],
             batch_size=config['ai']['batch_size'],
-            tagging_prompt=prompt_from_config
+            tagging_prompt=prompt_from_config,
+            cache_dir=models_dir
         )
         # Debug: Verify prompt source
         if prompt_from_config:

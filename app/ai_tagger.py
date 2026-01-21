@@ -14,10 +14,11 @@ from transformers import AutoProcessor, LlavaForConditionalGeneration, BitsAndBy
 
 
 class AITagger:
-    def __init__(self, model_id: str = "llava-hf/llava-1.5-7b-hf", use_quantization: bool = True, batch_size: int = 15, tagging_prompt: str = None):
+    def __init__(self, model_id: str = "llava-hf/llava-1.5-7b-hf", use_quantization: bool = True, batch_size: int = 15, tagging_prompt: str = None, cache_dir: str = None):
         self.model_id = model_id
         self.use_quantization = use_quantization
         self.batch_size = batch_size
+        self.cache_dir = cache_dir
         # Default comprehensive prompt if not provided
         default_prompt = (
             "USER: <image>\n"
@@ -59,7 +60,11 @@ class AITagger:
             
             # Load Processor
             # Reference: tagger_client_v2.py:38
-            self.processor = AutoProcessor.from_pretrained(self.model_id, use_fast=True)
+            self.processor = AutoProcessor.from_pretrained(
+                self.model_id, 
+                use_fast=True,
+                cache_dir=self.cache_dir
+            )
             
             # Load Model
             # Reference: tagger_client_v2.py:39-43
@@ -67,13 +72,15 @@ class AITagger:
                 self.model = LlavaForConditionalGeneration.from_pretrained(
                     self.model_id,
                     quantization_config=quantization_config,
-                    device_map="auto" 
+                    device_map="auto",
+                    cache_dir=self.cache_dir
                 )
             else:
                 self.model = LlavaForConditionalGeneration.from_pretrained(
                     self.model_id,
                     device_map="auto",
-                    torch_dtype=torch.float16
+                    torch_dtype=torch.float16,
+                    cache_dir=self.cache_dir
                 )
             
             print("✓ Model loaded successfully!")
