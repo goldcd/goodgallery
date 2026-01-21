@@ -131,7 +131,12 @@ def index():
     tags_map = {}
     for file in page_files:
         tags_str = db.get_tags(file['name'])
-        tags_map[file['name']] = tags_str if tags_str else None
+        if tags_str:
+            # Clean tags: remove asterisks and extra whitespace
+            cleaned_tags = ', '.join([tag.strip(' *') for tag in tags_str.split(',')])
+            tags_map[file['name']] = cleaned_tags
+        else:
+            tags_map[file['name']] = None
     
     return render_template('index.html',
         files=page_files,
@@ -558,6 +563,8 @@ def manual_tagging_worker():
         # Create temporary files for worker communication
         config_fd, config_file = tempfile.mkstemp(suffix='.json', text=True)
         output_fd, output_file = tempfile.mkstemp(suffix='.json', text=True)
+        progress_fd, progress_file = tempfile.mkstemp(suffix='.json', text=True)  # NEW: progress file
+        os.close(progress_fd)  # Worker will write to this
         
         try:
             # Write worker configuration with ALL images
@@ -565,6 +572,7 @@ def manual_tagging_worker():
                 'image_paths': image_paths,
                 'output_file': output_file,
                 'model_config': model_config,
+                'progress_file': progress_file,  # Pass progress file to worker
                 'total_images': total  # So worker can report progress
             }
             
@@ -594,8 +602,7 @@ def manual_tagging_worker():
                 env=env
             )
             
-            # Poll subprocess and update progress
-            # Worker will write progress to a status file that we can monitor
+            # Poll subprocess and update progress by reading progress file
             import time
             while process.poll() is None:
                 # Check for cancellation
@@ -607,9 +614,16 @@ def manual_tagging_worker():
                         tagging_state['status'] = 'Cancelled by user'
                         return
                 
-                # Update status (worker is processing)
-                with tagging_lock:
-                    tagging_state['status'] = f'Worker processing images...'
+                # Read progress from worker's progress file
+                try:
+                    with open(progress_file, 'r') as f:
+                        progress_data = json.load(f)
+                        with tagging_lock:
+                            tagging_state['current'] = progress_data.get('current', 0)
+                            tagging_state['status'] = progress_data.get('status', 'Processing...')
+                except:
+                    # Progress file may not exist yet or be incomplete
+                    pass
                 
                 time.sleep(1)  # Poll every second
             
@@ -655,6 +669,10 @@ def manual_tagging_worker():
                 pass
             try:
                 os.unlink(output_file)
+            except:
+                pass
+            try:
+                os.unlink(progress_file)  # Clean up progress file too
             except:
                 pass
         

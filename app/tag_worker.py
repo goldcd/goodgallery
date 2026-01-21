@@ -34,9 +34,19 @@ def main():
     output_file = config['output_file']
     model_config = config['model_config']
     batch_size = model_config.get('batch_size', 15)
+    progress_file = config.get('progress_file')  # NEW: progress file for status updates
     
     total_images = len(all_image_paths)
     print(f"[WORKER] Started - processing {total_images} images in batches of {batch_size}")
+    
+    # Helper to write progress
+    def update_progress(current, status):
+        if progress_file:
+            try:
+                with open(progress_file, 'w') as f:
+                    json.dump({'current': current, 'total': total_images, 'status': status}, f)
+            except:
+                pass  # Ignore write errors
     
     # Initialize tagger
     tagger = AITagger(
@@ -48,6 +58,7 @@ def main():
     )
     
     # Load model ONCE (GPU memory allocated here)
+    update_progress(0, 'Loading AI model...')
     tagger.load_model()
     
     # Process ALL images in batches
@@ -57,15 +68,18 @@ def main():
         batch_num = i // batch_size + 1
         total_batches = (total_images + batch_size - 1) // batch_size
         
+        update_progress(i, f'Processing batch {batch_num}/{total_batches}...')
         print(f"[WORKER] Processing batch {batch_num}/{total_batches} ({len(batch_paths)} images)...")
         
         results = tagger.tag_batch(batch_paths)
         all_results.extend(results)
         
         processed = min(i + batch_size, total_images)
+        update_progress(processed, f'Batch {batch_num}/{total_batches} complete')
         print(f"[WORKER] Progress: {processed}/{total_images} images tagged")
     
     # Save ALL results
+    update_progress(total_images, 'Saving results...')
     with open(output_file, 'w') as f:
         json.dump(all_results, f)
     
