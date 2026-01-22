@@ -422,11 +422,17 @@ def api_upload():
         if 'files' not in request.files:
             return jsonify({'error': 'No files provided'}), 400
         
+        import time
+        start_time = time.time()
+        import uuid
+        
         files = request.files.getlist('files')
         uploaded = []
         
+        print(f"Processing upload of {len(files)} files...")
+        
         for file in files:
-            if file.filename == '':
+            if not file or file.filename == '':
                 continue
             
             # Check if allowed extension
@@ -436,12 +442,27 @@ def api_upload():
             
             # Save to photos directory
             filename = secure_filename(file.filename)
+            if not filename:
+                # Fallback for filenames that become empty after secure_filename (e.g. unicode only)
+                filename = f"image_{uuid.uuid4().hex}.{ext}"
+            
             filepath = os.path.join(config['gallery']['photo_directory'], filename)
+            
+            # Ensure unique filename to prevent overwrite or permission issues
+            if os.path.exists(filepath):
+                base, extension = os.path.splitext(filename)
+                filename = f"{base}_{uuid.uuid4().hex[:8]}{extension}"
+                filepath = os.path.join(config['gallery']['photo_directory'], filename)
+            
+            # print(f"Saving {file.filename} -> {filename}") # Disabled for performance
             file.save(filepath)
             uploaded.append(filename)
         
+        duration = time.time() - start_time
+        print(f"Upload complete. Saved {len(uploaded)} files in {duration:.2f}s.")
         return jsonify({'status': 'ok', 'uploaded': uploaded, 'count': len(uploaded)})
     except Exception as e:
+        print(f"Upload error: {e}")
         return jsonify({'error': str(e)}), 500
 
 

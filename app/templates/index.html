@@ -17,8 +17,6 @@
             background: #f5f5f5;
             color: #333;
             min-height: 100vh;
-            display: flex;
-            flex-direction: column;
         }
 
         .header {
@@ -1315,44 +1313,65 @@
             statusText.textContent = `Uploading ${imageFiles.length} image(s)...`;
             progressBar.style.width = '0%';
 
-            // Upload files
+            // Set flag to prevent auto-reload during upload
+            isUploading = true;
+
+            // Upload files - Using XHR for progress monitoring
             const formData = new FormData();
             imageFiles.forEach(file => formData.append('files', file));
 
-            try {
-                // Simulate progress during upload
-                let progress = 0;
-                const progressInterval = setInterval(() => {
-                    progress += 5;
-                    if (progress <= 90) {
-                        progressBar.style.width = progress + '%';
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/api/upload', true);
+
+            // Progress handler
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                    const percentComplete = Math.round((e.loaded / e.total) * 100);
+                    progressBar.style.width = percentComplete + '%';
+
+                    if (percentComplete < 100) {
+                        statusText.textContent = `Uploading ${imageFiles.length} image(s)... ${percentComplete}%`;
+                    } else {
+                        statusText.textContent = `Processing on server...`;
                     }
-                }, 100);
+                }
+            };
 
-                const response = await fetch('/api/upload', {
-                    method: 'POST',
-                    body: formData
-                });
+            // Completion handler
+            xhr.onload = () => {
+                if (xhr.status === 200) {
+                    try {
+                        const result = JSON.parse(xhr.responseText);
+                        if (result.status === 'ok') {
+                            statusText.textContent = `Successfully uploaded ${result.count} image(s)!`;
+                            progressBar.style.width = '100%';
+                            progressBar.style.backgroundColor = '#28a745';
 
-                clearInterval(progressInterval);
-                progressBar.style.width = '100%';
-
-                const result = await response.json();
-
-                if (result.status === 'ok') {
-                    statusText.textContent = `Successfully uploaded ${result.count} image(s)!`;
-                    setTimeout(() => {
+                            setTimeout(() => {
+                                progressOverlay.style.display = 'none';
+                                window.location.reload();
+                            }, 800);
+                        } else {
+                            progressOverlay.style.display = 'none';
+                            alert('Upload failed: ' + (result.error || 'Unknown error'));
+                        }
+                    } catch (e) {
                         progressOverlay.style.display = 'none';
-                        window.location.reload();
-                    }, 800);
+                        alert('Invalid server response');
+                    }
                 } else {
                     progressOverlay.style.display = 'none';
-                    alert('Upload failed: ' + (result.error || 'Unknown error'));
+                    alert(`Upload error: Server returned ${xhr.status}`);
                 }
-            } catch (error) {
+            };
+
+            // Error handler
+            xhr.onerror = () => {
                 progressOverlay.style.display = 'none';
-                alert('Upload error: ' + error.message);
-            }
+                alert('Upload network error');
+            };
+
+            xhr.send(formData);
         });
         // Load related tags (when searching)
         function loadRelatedTags() {
@@ -1471,9 +1490,13 @@
 
 
         // ===== Auto-Refresh on File Changes =====
+        // ===== Auto-Refresh on File Changes =====
         let initialFileCount = {{ total_files }};
+        let isUploading = false;
 
         function checkForFileChanges() {
+            if (isUploading) return;
+
             fetch('/api/file_count')
                 .then(r => r.json())
                 .then(data => {
