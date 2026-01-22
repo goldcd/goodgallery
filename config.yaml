@@ -4,6 +4,9 @@ gallery:
   # Path to your photo directory
   photo_directory: "./photos"
   
+  # Gallery Title
+  title: "Good Gallery"
+  
   # Web server port
   port: 5000
   

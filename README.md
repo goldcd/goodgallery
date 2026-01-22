@@ -133,9 +133,14 @@ Edit `config.yaml` to customize:
 ```yaml
 gallery:
   photo_directory: "./photos"     # Where your photos are
+  title: "Good Gallery"            # Gallery title shown in header
   port: 5000                       # Web server port
   thumbnail_size: 200              # Thumbnail dimensions
   images_per_page: 100             # Pagination
+
+# Note: Thumbnails are aggressively cached for performance.
+# If you change thumbnail_size, you may need to clear your browser cache
+# or change the size slightly (e.g. 201) to force a refresh.
 
 ai:
   model: "llava-hf/llava-1.5-7b-hf"  # AI model

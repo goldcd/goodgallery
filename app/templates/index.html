@@ -35,7 +35,7 @@
             max-width: 1400px;
             margin: 0 auto;
             display: flex;
-            justify-content: space-between;
+            justify-content: flex-start;
             align-items: center;
             gap: 20px;
             flex-wrap: wrap;
@@ -724,7 +724,7 @@
 <body>
     <div class="header">
         <div class="header-content">
-            <div>
+            <div style="margin-right: auto;">
                 <h1>{{ app_title }}</h1>
                 <div class="stats">
                     {{ total_files }} images | {{ tagged_count }} tagged
