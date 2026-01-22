@@ -1,1 +1,1 @@
-git archive main | tar -x -C E:\test
+git archive main | tar -x -C E:\gg_test

@@ -70,14 +70,24 @@ class BootstrapManager:
         print(f"   Installing from: {requirements_file}\n")
         
         try:
-            # 1. Install PyTorch with CUDA support explicitly (matching reference venv versions)
-            print("   Installing PyTorch with CUDA support...")
-            subprocess.check_call([
-                sys.executable, "-m", "pip", "install", 
-                "torch==2.5.1", "torchvision==0.20.1", "torchaudio==2.5.1",
-                "--index-url", "https://download.pytorch.org/whl/cu121",
-                "--no-warn-script-location"
-            ])
+            # 1. Install PyTorch (Platform specific)
+            if sys.platform == 'win32':
+                # Windows: Install with CUDA 12.1 support
+                print("   [Windows] Installing PyTorch with CUDA support...")
+                subprocess.check_call([
+                    sys.executable, "-m", "pip", "install", 
+                    "torch==2.5.1", "torchvision==0.20.1", "torchaudio==2.5.1",
+                    "--index-url", "https://download.pytorch.org/whl/cu121",
+                    "--no-warn-script-location"
+                ])
+            else:
+                # Mac/Linux: Install standard PyTorch (includes MPS for Mac)
+                print(f"   [{sys.platform}] Installing standard PyTorch...")
+                subprocess.check_call([
+                    sys.executable, "-m", "pip", "install", 
+                    "torch==2.5.1", "torchvision==0.20.1", "torchaudio==2.5.1",
+                    "--no-warn-script-location"
+                ])
 
 
 
@@ -238,6 +248,19 @@ print("\\n   Model downloaded successfully!")
         # Launch using current Python (embedded)
         try:
             app_main = self.root_dir / "app" / "server.py"
+            # Launch browser in a separate thread (similar to launcher.py)
+            import threading
+            import time
+            import webbrowser
+            
+            def open_browser():
+                time.sleep(2)
+                url = "http://localhost:5000"
+                print(f"\n🌐 Opening browser: {url}")
+                webbrowser.open(url)
+            
+            threading.Thread(target=open_browser, daemon=True).start()
+
             subprocess.run(
                 [sys.executable, str(app_main)],
                 cwd=str(self.root_dir)
