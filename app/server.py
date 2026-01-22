@@ -19,7 +19,11 @@ from urllib.parse import unquote, quote
 from app.database import Database
 from app.gallery import Gallery
 from app.thumbnails import ThumbnailGenerator
-from app.ai_tagger import AITagger
+try:
+    from app.ai_tagger import AITagger
+except ImportError as e:
+    print(f"Warning: Failed to import AITagger ({e}). AI features will be disabled.")
+    AITagger = None
 from app.file_monitor import start_file_watcher
 
 
@@ -61,6 +65,16 @@ thumbs = ThumbnailGenerator(
     os.path.join(DATA_DIR, 'thumbnails'),
     config['gallery']['thumbnail_size']
 )
+# Validate thumbnail cache in background (removes invalid size thumbnails)
+# This prevents stutter during scrolling by doing the check asynchronously
+def run_validation():
+    print("Startup: Validating thumbnails in background...")
+    thumbs.validate_cache()
+    print("Startup: Thumbnail validation complete.")
+
+import threading
+validation_thread = threading.Thread(target=run_validation, daemon=True)
+validation_thread.start()
 
 # AI Tagger (lazy load)
 ai_tagger = None
@@ -69,6 +83,9 @@ ai_tagger = None
 def get_ai_tagger():
     """Lazy load AI tagger (only when needed)"""
     global ai_tagger
+    if AITagger is None:
+        raise Exception("AI features are not available (import failed)")
+        
     if ai_tagger is None:
         prompt_from_config = config['ai'].get('tagging_prompt')
         
@@ -156,6 +173,8 @@ def index():
         has_more=has_more,
         total_files=total_files,
         tagged_count=stats['tagged'],
+        app_title=config['gallery'].get('title', 'GoodGallery'),
+        config=config
     )
 
 

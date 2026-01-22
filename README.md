@@ -1,4 +1,5 @@
 # GoodGallery
+## v0.1.0 Alpha
 
 A standalone, zero-dependency image gallery application with AI-powered tagging using LLaVA.
 

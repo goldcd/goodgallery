@@ -103,15 +103,51 @@ class ThumbnailGenerator:
     def get_or_create(self, filename: str) -> Optional[str]:
         """
         Get thumbnail path, creating it if necessary
-        
-        Returns: Path to thumbnail if successful, None otherwise
         """
-        thumb_path = self.get_thumbnail_path(filename)
-        
         if self.thumbnail_exists(filename):
-            return thumb_path
+            return self.get_thumbnail_path(filename)
         
         return self.create_thumbnail(filename)
+
+    def validate_cache(self):
+        """
+        Check all existing thumbnails against configured size.
+        Delete those that don't match so they get regenerated.
+        """
+        if not os.path.exists(self.thumb_dir):
+            return
+
+        print("Validating thumbnail cache...")
+        count = 0
+        deleted = 0
+        
+        for filename in os.listdir(self.thumb_dir):
+            if not filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif')):
+                continue
+                
+            path = os.path.join(self.thumb_dir, filename)
+            try:
+                count += 1
+                with Image.open(path) as img:
+                    if img.size != (self.size, self.size):
+                        # Close explicit (though context manager does it) before delete
+                        pass
+                
+                # Check outcome (re-open to be safe/clean or just rely on logic? 
+                # Actually, context manager closes it.
+                # Let's do it cleanly:
+                
+                is_valid = False
+                with Image.open(path) as img:
+                    is_valid = (img.size == (self.size, self.size))
+                
+                if not is_valid:
+                    os.remove(path)
+                    deleted += 1
+            except Exception as e:
+                print(f"Error checking thumbnail {filename}: {e}")
+                
+        print(f"Thumbnail validation complete. Checked {count}, deleted {deleted} invalid.")
     
     def delete_thumbnail(self, filename: str) -> bool:
         """Delete a thumbnail file"""

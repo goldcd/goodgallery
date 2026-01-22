@@ -12,7 +12,7 @@ gallery:
   
   # Thumbnail settings
   thumbnail_size: 200
-  images_per_page: 100
+  images_per_page: 300
   
   # Allowed image extensions
   allowed_extensions:
@@ -25,10 +25,8 @@ gallery:
 ai:
   # LLaVA model to use (automatically downloads on first run)
   model: "llava-hf/llava-1.5-7b-hf"
-  
-  # Auto-tag images on startup
-  auto_tag: true
-  
+
+
   # Keep model loaded in GPU memory (faster but uses more VRAM)
   keep_model_loaded: false
   
@@ -49,6 +47,7 @@ ai:
     Do NOT include the category names themselves. Do NOT use bullet points or numbering.
     Return ONLY the keywords, separated by commas.
     Example: car, woman, running, beach, sunny, sketch, vintage, afternoon
+    Double check your response conforms to these provided rules, before returning it.
     ASSISTANT:
 
 database:

@@ -4,8 +4,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GoodGallery</title>
+    <title>{{ app_title }}</title>
     <style>
+        :root {
+            /* Fallback */
+            --thumb-size: 200px;
+        }
+
         * {
             box-sizing: border-box;
             margin: 0;
@@ -39,6 +44,20 @@
         h1 {
             font-size: 24px;
             font-weight: 600;
+        }
+
+        /* Use named CSS variable for column width if possible, or just strict minmax */
+        .gallery {
+            margin: 0 auto;
+            padding: 0 20px;
+            display: grid;
+            /* 
+               If --thumb-size is small (e.g. 100px), we want columns to be roughly that size.
+               minmax(100px, 1fr) means it can't be smaller than 100px, but can grow.
+               This allows "more columns" as requested.
+            */
+            grid-template-columns: repeat(auto-fill, minmax(calc(var(--thumb-size, 200px) + 20px), 1fr));
+            gap: 20px;
         }
 
         .stats {
@@ -294,13 +313,7 @@
             border-bottom: 1px solid #dee2e6;
         }
 
-        .gallery {
-            margin: 0 auto;
-            padding: 0 20px;
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 20px;
-        }
+
 
         .gallery-item {
             background: white;
@@ -712,7 +725,7 @@
     <div class="header">
         <div class="header-content">
             <div>
-                <h1>GoodGallery</h1>
+                <h1>{{ app_title }}</h1>
                 <div class="stats">
                     {{ total_files }} images | {{ tagged_count }} tagged
                 </div>
@@ -764,7 +777,7 @@
 
 
 
-    <div class="gallery">
+    <div class="gallery" style="--thumb-size: {{ config['gallery'].get('thumbnail_size', 200) }}px">
         {% if files %}
         {% for file in files %}
         <div class="gallery-item">
