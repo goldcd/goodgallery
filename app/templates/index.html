@@ -308,6 +308,9 @@
             overflow: hidden;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
             transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
         }
 
         .gallery-item:hover {
@@ -320,6 +323,8 @@
             /* 1:1 aspect ratio */
             background: #f0f0f0;
             overflow: hidden;
+            width: 100%;
+            flex-shrink: 0;
         }
 
         .thumb-container img {
@@ -339,25 +344,33 @@
             display: flex;
             align-items: stretch;
             border-top: 1px solid #f0f0f0;
+            min-height: 40px;
+            /* Ensure minimum touch target size */
+            flex-grow: 1;
+            /* Expand to fill available space (matching tallest in row) */
         }
 
         .filename-text {
-            flex: 0 0 85%;
+            flex: 1;
             padding: 10px;
             word-break: break-all;
             display: flex;
             align-items: center;
         }
 
-        /* Tag toggle area - 15% right side, fully clickable */
+        /* Tag toggle area - Fixed width right side */
         .tag-toggle-area {
-            flex: 0 0 15%;
+            flex: 0 0 44px;
+            /* Fixed width for consistent look */
+            width: 44px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
             transition: background 0.2s;
             border-left: 1px solid #f0f0f0;
+            background: #fff;
+            /* Ensure it covers background */
         }
 
         .tag-toggle-area:hover {
