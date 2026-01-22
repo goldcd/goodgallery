@@ -51,10 +51,9 @@ ai:
   # The prompt must follow the LLaVA conversation format: "USER: <image>\n...text...\nASSISTANT:"
   tagging_prompt: |
     USER: <image>
-    Generate a comprehensive, comma-separated list of keywords describing this image.
-    Focus on: main objects, people, actions, location, time, lighting, style, and mood.
-    Do NOT include the category names themselves. Do NOT use bullet points or numbering.
-    Return ONLY the keywords, separated by commas. Double check your response conforms to these provided rules, before returning it.
+    Analyze the image and generate a single, comprehensive, comma-separated list of keywords, listed in their descending importance as a description of the image
+    Include keywords for: main objects, people (including names of famous figures if recognized), actions, location, time of day, lighting, artistic style, mood, fictional characters, memes, distinctive features and anything else that seems to be a relevant keyword to search on this image by.
+    Do not transcribe text. Do not use categories or labels. Just keywords.
     Example: car, woman, running, beach, sunny, sketch, vintage, afternoon
     ASSISTANT:
 
