@@ -132,15 +132,25 @@ def index():
     for file in page_files:
         tags_str = db.get_tags(file['name'])
         if tags_str:
-            # Clean tags: remove asterisks and extra whitespace
-            cleaned_tags = ', '.join([tag.strip(' *') for tag in tags_str.split(',')])
+            # Clean tags: remove asterisks and extra whitespace, and sort alphabetically
+            tag_list = [tag.strip(' *') for tag in tags_str.split(',')]
+            tag_list = sorted([t for t in tag_list if t], key=str.lower)
+            cleaned_tags = ', '.join(tag_list)
             tags_map[file['name']] = cleaned_tags
         else:
             tags_map[file['name']] = None
     
+    # Parse active tag states for UI
+    active_tag_states = {}
+    if search_type == 'tag' and search_query:
+        search_terms = gallery.parse_tag_search(search_query)
+        for term, is_negative in search_terms:
+            active_tag_states[term.lower()] = 'exclude' if is_negative else 'include'
+
     return render_template('index.html',
         files=page_files,
         tags_map=tags_map,
+        active_tag_states=active_tag_states,
         search_query=search_query,
         search_type=search_type,
         page=page,

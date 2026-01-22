@@ -332,29 +332,61 @@
         }
 
         .filename {
-            padding: 10px;
+            padding: 0;
             font-size: 12px;
             color: #666;
-            word-break: break-all;
             line-height: 1.4;
             display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
+            align-items: stretch;
+            border-top: 1px solid #f0f0f0;
         }
 
         .filename-text {
-            flex: 1;
-            min-width: 0;
+            flex: 0 0 85%;
+            padding: 10px;
+            word-break: break-all;
+            display: flex;
+            align-items: center;
         }
 
-        /* Tag indicator icon */
+        /* Tag toggle area - 15% right side, fully clickable */
+        .tag-toggle-area {
+            flex: 0 0 15%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+            border-left: 1px solid #f0f0f0;
+        }
+
+        .tag-toggle-area:hover {
+            background: #f8f9fa;
+        }
+
+        /* Tag indicator icon within toggle area */
         .tag-indicator {
-            flex-shrink: 0;
-            width: 16px;
-            height: 16px;
-            position: relative;
-            cursor: help;
+            width: 24px;
+            height: 24px;
+            transition: transform 0.2s, color 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none;
+            /* Click goes to parent */
+        }
+
+        .tag-toggle-area:hover .tag-indicator {
+            transform: scale(1.15);
+        }
+
+        .tag-toggle-area.active {
+            background: #e9ecef;
+        }
+
+        .tag-toggle-area.active .tag-indicator {
+            transform: scale(1.25);
+            filter: drop-shadow(0 0 3px currentColor);
         }
 
         /* Tagged icon - gold/yellow filled tag */
@@ -367,63 +399,40 @@
             color: #ddd;
         }
 
-        /* Tag overlay on thumbnail hover */
-        .tag-overlay {
+        /* Thumbnail tag chips container (replaces image when toggled) */
+        .thumb-tag-chips {
             position: absolute;
             top: 0;
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0, 0, 0, 0.95);
+            background: #fafafa;
+            border: 2px solid #e0e0e0;
             display: none;
-            flex-direction: column;
-            justify-content: flex-start;
-            align-items: flex-start;
-            padding: 15px;
+            flex-wrap: wrap;
+            align-content: flex-start;
+            padding: 10px;
+            gap: 6px;
             overflow-y: auto;
             z-index: 5;
         }
 
-        .thumb-container:hover .tag-overlay {
+        .thumb-tag-chips.active {
             display: flex;
         }
 
-        .thumb-container:hover img {
-            opacity: 0;
+        /* Style tag chips in thumbnails to match global chips */
+        .thumb-tag-chips .tag-chip {
+            height: fit-content;
         }
 
-        .tag-overlay-title {
-            font-size: 11px;
-            color: #888;
-            margin-bottom: 8px;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-            flex-shrink: 0;
-        }
-
-        .tag-overlay-list {
-            list-style: none;
-            padding: 0;
-            margin: 0;
+        .thumb-tag-chips .no-tags-message {
             width: 100%;
-        }
-
-        .tag-overlay-list li {
-            color: white;
-            font-size: 13px;
-            padding: 4px 0;
-            line-height: 1.4;
-        }
-
-        .tag-overlay.untagged {
-            justify-content: center;
-            align-items: center;
-        }
-
-        .tag-overlay.untagged .tag-overlay-title {
-            margin: 0;
-            font-size: 14px;
-            color: #666;
+            text-align: center;
+            color: #999;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 20px;
         }
 
         .loader {
@@ -707,43 +716,52 @@
         {% if files %}
         {% for file in files %}
         <div class="gallery-item">
-            <a href="/img/{{ file.name }}" target="_blank">
-                <div class="thumb-container">
+            <div class="thumb-container">
+                <a href="/img/{{ file.name }}" target="_blank" style="display:block; width:100%; height:100%;">
                     <img src="/thumb/{{ file.name }}" alt="{{ file.name }}" loading="lazy">
-                    {% if tags_map.get(file.name) %}
-                    <div class="tag-overlay">
-                        <div class="tag-overlay-title">TAGS</div>
-                        <ul class="tag-overlay-list">
-                            {% for tag in tags_map[file.name].split(',') %}
-                            <li>{{ tag.strip() }}</li>
-                            {% endfor %}
-                        </ul>
+                </a>
+
+                <!-- Tag chips view (hidden by default, shown when toggled) -->
+                {% if tags_map.get(file.name) %}
+                <div class="thumb-tag-chips">
+                    {% for tag in tags_map[file.name].split(', ') | sort %}
+                    {% set tag_lower = tag.lower() %}
+                    {% set state = active_tag_states.get(tag_lower, 'neutral') %}
+                    <div class="tag-chip {{ state }}" data-tag="{{ tag }}">
+                        <span class="chip-label">{{ tag }}</span>
+                        <span class="chip-btn btn-remove" title="Remove">✕</span>
+                        <span class="chip-btn btn-plus" title="Include">AND</span>
+                        <span class="chip-btn btn-minus" title="Exclude">NOT</span>
                     </div>
-                    {% else %}
-                    <div class="tag-overlay untagged">
-                        <div class="tag-overlay-title">UNTAGGED</div>
-                    </div>
-                    {% endif %}
+                    {% endfor %}
                 </div>
-            </a>
+                {% else %}
+                <div class="thumb-tag-chips">
+                    <span class="no-tags-message">UNTAGGED</span>
+                </div>
+                {% endif %}
+            </div>
+
             <div class="filename">
                 <span class="filename-text">{{ file.name }}</span>
-                {% if tags_map.get(file.name) %}
-                <span class="tag-indicator tagged" title="Hover thumbnail to view tags">
-                    <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                        <path
-                            d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z" />
-                    </svg>
-                </span>
-                {% else %}
-                <span class="tag-indicator untagged" title="Untagged">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                        xmlns="http://www.w3.org/2000/svg">
-                        <path
-                            d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z" />
-                    </svg>
-                </span>
-                {% endif %}
+                <div class="tag-toggle-area" onclick="toggleThumbnailView(event, this)">
+                    {% if tags_map.get(file.name) %}
+                    <span class="tag-indicator tagged">
+                        <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                            <path
+                                d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z" />
+                        </svg>
+                    </span>
+                    {% else %}
+                    <span class="tag-indicator untagged">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            xmlns="http://www.w3.org/2000/svg">
+                            <path
+                                d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.42l9 9c.36.36.86.58 1.41.58.55 0 1.05-.22 1.41-.59l7-7c.37-.36.59-.86.59-1.41 0-.55-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z" />
+                        </svg>
+                    </span>
+                    {% endif %}
+                </div>
             </div>
         </div>
         {% endfor %}
@@ -1084,6 +1102,73 @@
             loadTags();
         }
 
+        // ===== Global Helper Functions =====
+        function updateSearchQuery(tag, newState) {
+            const query = document.getElementById('searchInput').value;
+            const activeState = {};
+            const regex = /([+-]?)(?:"([^"]*)"|([^\s"]+))/g;
+            let match;
+
+            // Parse current query
+            while ((match = regex.exec(query)) !== null) {
+                const prefix = match[1];
+                const term = match[2] || match[3];
+                if (!term) continue;
+                const termLower = term.toLowerCase();
+
+                if (prefix === '-') activeState[termLower] = 'exclude';
+                else activeState[termLower] = 'include';
+            }
+
+            // Update state
+            const tagLower = tag.toLowerCase();
+            if (newState === 'neutral') {
+                delete activeState[tagLower];
+            } else {
+                activeState[tagLower] = newState;
+            }
+
+            // Reconstruct query
+            let finalStr = '';
+            for (const t in activeState) {
+                let token = t;
+                if (token.indexOf(' ') > -1) token = '"' + token + '"';
+
+                if (activeState[t] === 'exclude') finalStr += '-' + token + ' ';
+                else finalStr += '+' + token + ' ';
+            }
+
+            const searchInput = document.getElementById('searchInput');
+            const searchType = document.getElementById('searchType');
+
+            searchInput.value = finalStr.trim();
+            searchType.value = 'tag';
+            searchInput.form.submit();
+        }
+
+        function addTag(tag, state) {
+            updateSearchQuery(tag, state);
+        }
+
+        function removeTag(tag) {
+            updateSearchQuery(tag, 'neutral');
+        }
+
+        function toggleTag(tag) {
+            // Determine current state then toggle
+            const query = document.getElementById('searchInput').value;
+            const regex = new RegExp(`([+-]?)(?:"${tag}"|${tag})`, 'i');
+            const match = query.match(regex);
+
+            if (match) {
+                // Currently active -> remove it
+                updateSearchQuery(tag, 'neutral');
+            } else {
+                // Currently neutral -> add as include
+                updateSearchQuery(tag, 'include');
+            }
+        }
+
         // ===== Tag Filter Chips =====
 
         // Shared function to attach event handlers to tag chips
@@ -1420,12 +1505,92 @@
             // Auto-reveal chips when user has searched
             setTimeout(() => {
                 document.getElementById('relatedTags').style.display = 'flex';
-                document.getElementById('toggleIcon').textContent = '▲';
-                document.getElementById('toggleText').textContent = 'Hide Tag Filters';
+                const icon = document.getElementById('toggleIcon');
+                if (icon) icon.textContent = '▲';
+
+                // toggleText element was removed from HTML
+                // const text = document.getElementById('toggleText');
+                // if (text) text.textContent = 'Hide Tag Filters';
             }, 100);
         }
 
 
+
+
+
+        // Toggle between Image and Tag View for a single thumbnail
+        function toggleThumbnailView(event, toggleArea) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const card = toggleArea.closest('.gallery-item');
+            const thumbContainer = card.querySelector('.thumb-container');
+            const tagChips = thumbContainer.querySelector('.thumb-tag-chips');
+            const imageLink = thumbContainer.querySelector('a');
+
+            // Close all other open tag views first
+            document.querySelectorAll('.thumb-tag-chips.active').forEach(chips => {
+                if (chips !== tagChips) {
+                    chips.classList.remove('active');
+                    // Reset the toggle area for that thumbnail
+                    const otherCard = chips.closest('.gallery-item');
+                    const otherToggleArea = otherCard.querySelector('.tag-toggle-area');
+                    if (otherToggleArea) otherToggleArea.classList.remove('active');
+                }
+            });
+
+            // Toggle current thumbnail
+            if (tagChips.classList.contains('active')) {
+                // Switch back to image
+                tagChips.classList.remove('active');
+                toggleArea.classList.remove('active');
+            } else {
+                // Switch to tags
+                tagChips.classList.add('active');
+                toggleArea.classList.add('active');
+            }
+        }
+
+        // Overlay Chip Click Handling
+        document.addEventListener('click', function (e) {
+            // Find clicked chip within THUMBNAIL view
+            const chip = e.target.closest('.thumb-tag-chips .tag-chip');
+            if (!chip) return;
+
+            const tag = chip.dataset.tag;
+
+            // Handle Buttons
+            if (e.target.classList.contains('btn-remove')) {
+                e.preventDefault();
+                e.stopPropagation();
+                removeTag(tag);
+            } else if (e.target.classList.contains('btn-plus')) {
+                e.preventDefault();
+                e.stopPropagation();
+                addTag(tag, 'include');
+            } else if (e.target.classList.contains('btn-minus')) {
+                e.preventDefault();
+                e.stopPropagation();
+                addTag(tag, 'exclude');
+            } else {
+                // Clicking body EXPANDS/COLLAPSES the chip in this view
+                e.preventDefault();
+                e.stopPropagation();
+
+                // Toggle expanded class
+                if (chip.classList.contains('expanded')) {
+                    chip.classList.remove('expanded');
+                } else {
+                    // Close other expanded chips in same container? Optional but good for space.
+                    const container = chip.closest('.thumb-tag-chips');
+                    if (container) {
+                        container.querySelectorAll('.expanded').forEach(c => c.classList.remove('expanded'));
+                    }
+
+                    chip.classList.add('expanded');
+                }
+            }
+        });
 
 
 
