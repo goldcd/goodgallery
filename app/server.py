@@ -698,6 +698,7 @@ def manual_tagging_worker():
 
 # --- RUN SERVER ---
 
+<<<<<<< HEAD
 def run_server(host='127.0.0.1', port=None, debug=False):
     """Start Flask server"""
     if port is None:
@@ -726,6 +727,8 @@ def run_server(host='127.0.0.1', port=None, debug=False):
     # Users can trigger tagging manually from UI
     if config['ai'].get('auto_tag', False):
         print("🤖 Auto-tagging: disabled (use UI button to start tagging)")
+=======
+>>>>>>> 330560c153dd5ff82c23722a9c86631682502cda
     else:
         print("🤖 Auto-tagging: disabled")
     
