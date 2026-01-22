@@ -45,7 +45,6 @@ config = load_config()
 PHOTO_DIR = os.path.normpath(os.path.join(ROOT_DIR, config['gallery']['photo_directory']))
 DATA_DIR = os.path.join(ROOT_DIR, 'data')
 DB_PATH = os.path.join(DATA_DIR, 'gallery.db')
-# DB_PATH = os.path.join(DATA_DIR, 'verify_logic.db') # SWITCHED TO SYNTHETIC DB
 
 # Override config to use absolute path for server logic
 config['gallery']['photo_directory'] = PHOTO_DIR
@@ -160,61 +159,67 @@ def index():
     )
 
 
+def resolve_file_path(base_dir, filename):
+    """
+    Helper to resolve file path with multiple encoding fallback checks
+    Handles standard filenames, URL-encoded filenames, and double-encoded filenames
+    """
+    # 1. Check direct path
+    path = os.path.join(base_dir, filename)
+    if os.path.exists(path):
+        return path
+
+    # 2. Check decoded path (e.g. %20 -> space)
+    if '%' in filename:
+        try:
+            decoded = unquote(filename)
+            path = os.path.join(base_dir, decoded)
+            if os.path.exists(path):
+                return path
+        except:
+            pass
+            
+    # 3. Check encoded path (e.g. space -> %20)
+    # Some file systems/browsers might request unencoded but file IS encoded on disk
+    try:
+        encoded = quote(filename)
+        if encoded != filename:
+            path = os.path.join(base_dir, encoded)
+            if os.path.exists(path):
+                return path
+    except:
+        pass
+        
+    return None
+
 @app.route('/thumb/<path:filename>')
 def serve_thumbnail(filename):
     """Generate and serve thumbnail"""
-    # Prevent directory traversal (don't use secure_filename - it strips underscores)
+    # Prevent directory traversal
     if '..' in filename or filename.startswith('/') or '\\' in filename:
         abort(404)
     
     # Get or create thumbnail
     thumb_path = thumbs.get_or_create(filename)
     
-    # Retry with decoded filename if not found (e.g. %20 -> space)
-    if not thumb_path and '%' in filename:
-        try:
-            decoded_name = unquote(filename)
-            thumb_path = thumbs.get_or_create(decoded_name)
-        except:
-            pass
-            
-    # Retry with ENCODED filename if not found (e.g. space -> %20)
-    # This handles files that actually have %20 in their name on disk
+    # If standard get_or_create failed, try strict path resolution on source to see if we can find it
+    # This handles edge cases where thumbnail generation might need to find the source first
     if not thumb_path:
-        try:
-            encoded_name = quote(filename)
-            if encoded_name != filename:
-                 thumb_path = thumbs.get_or_create(encoded_name)
-        except:
-            pass
-            
+        # Try to find source file using robust resolution
+        source_path = resolve_file_path(gallery.photo_dir, filename)
+        if source_path:
+            # Found source, try creating thumbnail from this specific path
+            # We need to extract the actual filename found on disk
+            actual_filename = os.path.basename(source_path)
+            thumb_path = thumbs.get_or_create(actual_filename)
+
     if thumb_path and os.path.exists(thumb_path):
         return send_file(thumb_path)
     
     # Fallback to original if thumbnail fails
-    original_path = os.path.normpath(os.path.join(gallery.photo_dir, filename))
-    if os.path.exists(original_path):
+    original_path = resolve_file_path(gallery.photo_dir, filename)
+    if original_path:
         return send_file(original_path)
-        
-    # Retry original with decoded filename
-    if '%' in filename:
-        try:
-            decoded_name = unquote(filename)
-            original_path = os.path.normpath(os.path.join(gallery.photo_dir, decoded_name))
-            if os.path.exists(original_path):
-                return send_file(original_path)
-        except:
-            pass
-            
-    # Retry original with ENCODED filename
-    try:
-        encoded_name = quote(filename)
-        if encoded_name != filename:
-            original_path = os.path.normpath(os.path.join(gallery.photo_dir, encoded_name))
-            if os.path.exists(original_path):
-                return send_file(original_path)
-    except:
-        pass
     
     abort(404)
 
@@ -225,20 +230,11 @@ def serve_image(filename):
     # Prevent directory traversal
     if '..' in filename or filename.startswith('/') or '\\' in filename:
         abort(404)
-    image_path = os.path.join(gallery.photo_dir, filename)
-    
-    if os.path.exists(image_path):
-        return send_file(image_path)
         
-    # Retry with decoded filename
-    if '%' in filename:
-        try:
-            decoded_name = unquote(filename)
-            image_path = os.path.join(gallery.photo_dir, decoded_name)
-            if os.path.exists(image_path):
-                return send_file(image_path)
-        except:
-            pass
+    image_path = resolve_file_path(gallery.photo_dir, filename)
+    
+    if image_path:
+        return send_file(image_path)
     
     abort(404)
 
@@ -702,83 +698,6 @@ def manual_tagging_worker():
 
 # --- RUN SERVER ---
 
-def auto_tag_on_startup():
-    """Auto-tag untagged images on startup (runs in background)"""
-    import time
-    
-    # GUARD: Don't run in Flask's reloader parent process
-    # When debug=True, Flask spawns a parent + child process. 
-    # We only want to run tagging in the actual worker process.
-    if os.environ.get('WERKZEUG_RUN_MAIN') != 'true' and app.debug:
-        return  # Skip in parent reloader process
-    
-    # Wait a moment for server to start
-    time.sleep(2)
-    
-    try:
-        print("🤖 Auto-tagging enabled - scanning for untagged images...")
-        
-        # Get untagged files
-        all_files = gallery.get_file_index()
-        tagged = db.get_tagged_filenames()
-        
-        untagged = [
-            f['name'] for f in all_files 
-            if f['name'].lower() not in tagged
-        ]
-        
-        if not untagged:
-            print("✓ All images are already tagged!\n")
-            return
-        
-        print(f"   Found {len(untagged)} untagged images")
-        print("   Starting AI tagging (this may take a while)...\n")
-        
-        # Use the manual tagging worker (subprocess approach)
-        # This ensures GPU memory is properly released
-        manual_tagging_worker()
-        
-    except Exception as e:
-        print(f"\n⚠️  Auto-tagging failed: {e}")
-        print("   You can still tag images manually from the web UI\n")
-
-
-def run_server(host='127.0.0.1', port=None, debug=False):
-    """Start Flask server"""
-    if port is None:
-        port = config['gallery']['port']
-    
-    # Startup info
-    print("\n" + "="*60)
-    print("   ✓ GoodGallery Started Successfully!")
-    print("="*60)
-    print(f"\n🌐 Server running at: http://{host}:{port}")
-    print(f"📁 Photo directory: {config['gallery']['photo_directory']}")
-    print(f"🏷️  Tagged images: {db.get_stats()['tagged']}")
-    
-    # Start file monitoring
-    if config['gallery'].get('watch_for_changes', True):
-        watcher = start_file_watcher(
-            PHOTO_DIR,
-            db,
-            thumbs,
-            config['gallery']['allowed_extensions']
-        )
-        if watcher:
-            print("👁️  File monitoring: enabled")
-    
-    # Check auto-tag setting (disabled by default for better UX)
-    # Users can trigger tagging manually from UI
-    if config['ai'].get('auto_tag', False):
-        print("🤖 Auto-tagging: disabled (use UI button to start tagging)")
-        # Auto-tagging disabled - provides better UX:
-        # - Fast server startup
-        # - Users see untagged count immediately
-        # - Clear manual control via UI button
-        # 
-        # import threading
-        # thread = threading.Thread(target=auto_tag_on_startup, daemon=True)
-        # thread.start()
     else:
         print("🤖 Auto-tagging: disabled")
     

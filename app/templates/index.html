@@ -310,7 +310,6 @@
         }
 
         .gallery-item:hover {
-            transform: translateY(-4px);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
 
@@ -399,41 +398,7 @@
             color: #ddd;
         }
 
-        /* Thumbnail tag chips container (replaces image when toggled) */
-        .thumb-tag-chips {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: #fafafa;
-            border: 2px solid #e0e0e0;
-            display: none;
-            flex-wrap: wrap;
-            align-content: flex-start;
-            padding: 10px;
-            gap: 6px;
-            overflow-y: auto;
-            z-index: 5;
-        }
-
-        .thumb-tag-chips.active {
-            display: flex;
-        }
-
-        /* Style tag chips in thumbnails to match global chips */
-        .thumb-tag-chips .tag-chip {
-            height: fit-content;
-        }
-
-        .thumb-tag-chips .no-tags-message {
-            width: 100%;
-            text-align: center;
-            color: #999;
-            font-size: 11px;
-            font-weight: 600;
-            padding: 20px;
-        }
+        /* Thumb tag chips removed */
 
         .loader {
             text-align: center;
@@ -720,31 +685,11 @@
                 <a href="/img/{{ file.name }}" target="_blank" style="display:block; width:100%; height:100%;">
                     <img src="/thumb/{{ file.name }}" alt="{{ file.name }}" loading="lazy">
                 </a>
-
-                <!-- Tag chips view (hidden by default, shown when toggled) -->
-                {% if tags_map.get(file.name) %}
-                <div class="thumb-tag-chips">
-                    {% for tag in tags_map[file.name].split(', ') | sort %}
-                    {% set tag_lower = tag.lower() %}
-                    {% set state = active_tag_states.get(tag_lower, 'neutral') %}
-                    <div class="tag-chip {{ state }}" data-tag="{{ tag }}">
-                        <span class="chip-label">{{ tag }}</span>
-                        <span class="chip-btn btn-remove" title="Remove">✕</span>
-                        <span class="chip-btn btn-plus" title="Include">AND</span>
-                        <span class="chip-btn btn-minus" title="Exclude">NOT</span>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <div class="thumb-tag-chips">
-                    <span class="no-tags-message">UNTAGGED</span>
-                </div>
-                {% endif %}
             </div>
 
             <div class="filename">
                 <span class="filename-text">{{ file.name }}</span>
-                <div class="tag-toggle-area" onclick="toggleThumbnailView(event, this)">
+                <div class="tag-toggle-area">
                     {% if tags_map.get(file.name) %}
                     <span class="tag-indicator tagged">
                         <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -1518,79 +1463,7 @@
 
 
 
-        // Toggle between Image and Tag View for a single thumbnail
-        function toggleThumbnailView(event, toggleArea) {
-            event.preventDefault();
-            event.stopPropagation();
-
-            const card = toggleArea.closest('.gallery-item');
-            const thumbContainer = card.querySelector('.thumb-container');
-            const tagChips = thumbContainer.querySelector('.thumb-tag-chips');
-            const imageLink = thumbContainer.querySelector('a');
-
-            // Close all other open tag views first
-            document.querySelectorAll('.thumb-tag-chips.active').forEach(chips => {
-                if (chips !== tagChips) {
-                    chips.classList.remove('active');
-                    // Reset the toggle area for that thumbnail
-                    const otherCard = chips.closest('.gallery-item');
-                    const otherToggleArea = otherCard.querySelector('.tag-toggle-area');
-                    if (otherToggleArea) otherToggleArea.classList.remove('active');
-                }
-            });
-
-            // Toggle current thumbnail
-            if (tagChips.classList.contains('active')) {
-                // Switch back to image
-                tagChips.classList.remove('active');
-                toggleArea.classList.remove('active');
-            } else {
-                // Switch to tags
-                tagChips.classList.add('active');
-                toggleArea.classList.add('active');
-            }
-        }
-
-        // Overlay Chip Click Handling
-        document.addEventListener('click', function (e) {
-            // Find clicked chip within THUMBNAIL view
-            const chip = e.target.closest('.thumb-tag-chips .tag-chip');
-            if (!chip) return;
-
-            const tag = chip.dataset.tag;
-
-            // Handle Buttons
-            if (e.target.classList.contains('btn-remove')) {
-                e.preventDefault();
-                e.stopPropagation();
-                removeTag(tag);
-            } else if (e.target.classList.contains('btn-plus')) {
-                e.preventDefault();
-                e.stopPropagation();
-                addTag(tag, 'include');
-            } else if (e.target.classList.contains('btn-minus')) {
-                e.preventDefault();
-                e.stopPropagation();
-                addTag(tag, 'exclude');
-            } else {
-                // Clicking body EXPANDS/COLLAPSES the chip in this view
-                e.preventDefault();
-                e.stopPropagation();
-
-                // Toggle expanded class
-                if (chip.classList.contains('expanded')) {
-                    chip.classList.remove('expanded');
-                } else {
-                    // Close other expanded chips in same container? Optional but good for space.
-                    const container = chip.closest('.thumb-tag-chips');
-                    if (container) {
-                        container.querySelectorAll('.expanded').forEach(c => c.classList.remove('expanded'));
-                    }
-
-                    chip.classList.add('expanded');
-                }
-            }
-        });
+        // Toggle View Removed
 
 
 
