@@ -10,8 +10,15 @@ import concurrent.futures
 from typing import List, Dict, Optional
 from PIL import Image
 import torch
-from transformers import AutoProcessor, LlavaForConditionalGeneration, BitsAndBytesConfig
+from transformers import AutoProcessor, LlavaForConditionalGeneration
 
+# Global device detection
+def get_device():
+    if torch.cuda.is_available():
+        return "cuda"
+    elif torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
 
 class AITagger:
     def __init__(self, model_id: str = "llava-hf/llava-1.5-7b-hf", use_quantization: bool = True, batch_size: int = 15, tagging_prompt: str = None, cache_dir: str = None):
@@ -19,6 +26,13 @@ class AITagger:
         self.use_quantization = use_quantization
         self.batch_size = batch_size
         self.cache_dir = cache_dir
+        self.device = get_device()
+        
+        # Disable quantization on non-CUDA devices (BitsAndBytes is CUDA-only)
+        if self.device != "cuda" and self.use_quantization:
+            print(f"[{self.device}] 4-bit quantization disabled (requires CUDA). Using float16 instead.")
+            self.use_quantization = False
+            
         # Default comprehensive prompt if not provided
         default_prompt = (
             "USER: <image>\n"
@@ -44,22 +58,24 @@ class AITagger:
         if self.is_loaded:
             return
         
-        print("Loading LLaVA model (this may take a while)...")
+        print(f"Loading LLaVA model on {self.device.upper()} (this may take a while)...")
         print(f"  Using tagging prompt: {self.tagging_prompt[:80]}..." if len(self.tagging_prompt) > 80 else f"  Using tagging prompt: {self.tagging_prompt}")
         
         try:
-            # Quantization config for 4-bit loading (fits in ~6GB VRAM)
-            # Reference: tagger_client_v2.py:30-33
-            if self.use_quantization:
-                quantization_config = BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_compute_dtype=torch.float16
-                )
-            else:
-                quantization_config = None
+            quantization_config = None
+            
+            # Windows/CUDA: Use BitsAndBytes if requested
+            if self.device == "cuda" and self.use_quantization:
+                try:
+                    from transformers import BitsAndBytesConfig
+                    quantization_config = BitsAndBytesConfig(
+                        load_in_4bit=True,
+                        bnb_4bit_compute_dtype=torch.float16
+                    )
+                except ImportError:
+                    print("Warning: bitsandbytes not installed, falling back to float16")
             
             # Load Processor
-            # Reference: tagger_client_v2.py:38
             self.processor = AutoProcessor.from_pretrained(
                 self.model_id, 
                 use_fast=True,
@@ -67,8 +83,8 @@ class AITagger:
             )
             
             # Load Model
-            # Reference: tagger_client_v2.py:39-43
-            if self.use_quantization:
+            if quantization_config:
+                # 4-bit customized load (CUDA only)
                 self.model = LlavaForConditionalGeneration.from_pretrained(
                     self.model_id,
                     quantization_config=quantization_config,
@@ -76,17 +92,18 @@ class AITagger:
                     cache_dir=self.cache_dir
                 )
             else:
+                # Standard load (Mac M1/M2/M3, CPU, or non-quantized CUDA)
                 self.model = LlavaForConditionalGeneration.from_pretrained(
                     self.model_id,
-                    device_map="auto",
-                    torch_dtype=torch.float16,
+                    device_map=self.device, # Explicitly map to mps/cpu/cuda
+                    torch_dtype=torch.float16, # Use float16 for efficiency on Mac too
                     cache_dir=self.cache_dir
                 )
             
             print("[OK] Model loaded successfully!")
             self.is_loaded = True
             
-            # Optional: Log memory just for confirmation (not in reference, but harmless)
+            # Optional: Log memory just for confirmation
             try:
                 footprint = self.model.get_memory_footprint() / 1024**3
                 print(f"  Memory footprint: {footprint:.2f} GB")
@@ -95,7 +112,8 @@ class AITagger:
             
         except Exception as e:
             print(f"Error loading model: {e}")
-            print("Ensure you have installed: torch transformers accelerate bitsandbytes")
+            if self.device == "cuda":
+                print("Ensure you have installed: torch transformers accelerate bitsandbytes")
             raise
 
     def _load_image_worker(self, path: str):
@@ -139,16 +157,14 @@ class AITagger:
             prompts = [self.tagging_prompt] * len(valid_images)
             
             # 3. Tokenize
-            # Reference: tagger_client_v2.py:123
             inputs = self.processor(
                 text=prompts,
                 images=valid_images,
                 return_tensors="pt",
                 padding=True
-            ).to("cuda") # Reference used to("cuda"), explicit here
+            ).to(self.device) # Dynamic device mapping
             
             # 4. Generate
-            # Reference: tagger_client_v2.py:126-132
             generate_ids = self.model.generate(
                 **inputs,
                 max_new_tokens=60,
@@ -158,7 +174,6 @@ class AITagger:
             )
             
             # 5. Decode
-            # Reference: tagger_client_v2.py:135
             outputs = self.processor.batch_decode(
                 generate_ids,
                 skip_special_tokens=True,
