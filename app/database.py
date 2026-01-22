@@ -76,11 +76,36 @@ class Database:
             row = cursor.fetchone()
             return row['tags'] if row else None
     
+    def _clean_tags(self, tags_str: Optional[str]) -> Optional[str]:
+        """
+        Clean tag string by removing bullets and extra whitespace
+        Input: "* tag1, - tag2, normal tag"
+        Output: "tag1, tag2, normal tag"
+        """
+        if not tags_str:
+            return None
+            
+        # Split by comma
+        parts = tags_str.split(',')
+        cleaned = []
+        
+        for p in parts:
+            # Remove leading bullets (*, -, •, +), brackets, and whitespace
+            # Regex: start of string, optional whitespace, one or more bullets/brackets, optional whitespace
+            clean_p = re.sub(r'^\s*[\*\-•+\[\]\(\)]+\s*', '', p).strip()
+            if clean_p:
+                cleaned.append(clean_p)
+                
+        return ', '.join(cleaned)
+    
     def save_tags(self, filename: str, tags: str):
         """
         Save or update tags for a file
         Uses INSERT OR REPLACE for upsert behavior
         """
+        # Clean tags before saving
+        clean_tags = self._clean_tags(tags)
+        
         with self.get_connection() as conn:
             conn.execute("""
                 INSERT INTO image_tags (filename, tags, updated_at)
@@ -88,7 +113,7 @@ class Database:
                 ON CONFLICT(filename) DO UPDATE SET
                     tags = excluded.tags,
                     updated_at = CURRENT_TIMESTAMP
-            """, (filename, tags))
+            """, (filename, clean_tags))
     
     def save_tags_batch(self, items: List[Dict[str, str]]):
         """
@@ -104,13 +129,16 @@ class Database:
                 if isinstance(tags, list):
                     tags = ','.join(tags)
                 
+                # Clean tags
+                clean_tags = self._clean_tags(tags)
+                
                 conn.execute("""
                     INSERT INTO image_tags (filename, tags, updated_at)
                     VALUES (?, ?, CURRENT_TIMESTAMP)
                     ON CONFLICT(filename) DO UPDATE SET
                         tags = excluded.tags,
                         updated_at = CURRENT_TIMESTAMP
-                """, (filename, tags))
+                """, (filename, clean_tags))
     
     def delete_tags(self, filename: str):
         """Delete tags entry for a file"""
@@ -149,8 +177,10 @@ class Database:
             # - ,term$ (tag at end of list)
             # With optional whitespace around commas
             escaped_term = re.escape(term.lower())
-            # Match tag boundaries: start/end of string OR comma (with optional spaces)
-            pattern = fr"(^|\s*,\s*){escaped_term}(\s*,\s*|$)"
+            # Match tag boundaries: start/end of string OR comma
+            # Allow for optional spaces, bullets (*, -) around the term
+            # This handles dirty data like "* tagname" or "- tagname" often produced by LLMs
+            pattern = fr"(?:^|,)\s*(?:[\*\-\s]*){escaped_term}(?:[\*\-\s]*)(?:,|$)"
             
             if is_negative:
                 conditions.append("tags NOT REGEXP ?")

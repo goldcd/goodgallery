@@ -326,8 +326,13 @@ def api_save_tags():
 @app.route('/api/tags')
 def api_tags():
     """Get all tags with frequencies"""
-    min_count = int(request.args.get('min_count', 2))
-    limit = int(request.args.get('limit', 100))
+    # Get limits from config or defaults
+    config_limits = config['gallery'].get('tag_limits', {})
+    default_limit = config_limits.get('dropdown', 1000)
+    default_min = config_limits.get('min_count', 1)
+    
+    min_count = int(request.args.get('min_count', default_min))
+    limit = int(request.args.get('limit', default_limit))
     
     top_tags = db.get_top_tags(limit=limit, min_count=min_count)
     
@@ -349,7 +354,12 @@ def api_related_tags():
     
     if not search_query:
         # Return popular tags
-        top_tags = db.get_top_tags(limit=30)
+        # Use browse limit from config
+        config_limits = config['gallery'].get('tag_limits', {})
+        browse_limit = config_limits.get('browse', 100)
+        min_count = config_limits.get('min_count', 1)
+        
+        top_tags = db.get_top_tags(limit=browse_limit, min_count=min_count)
         return jsonify({tag: count for tag, count in top_tags})
     
     # Parse search and get matching files

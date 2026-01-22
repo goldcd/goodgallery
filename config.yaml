@@ -25,6 +25,12 @@ gallery:
     - gif
     - webp
 
+  # Tag Visibility Limits
+  tag_limits:
+    dropdown: 1000      # Max tags in search dropdown
+    browse: 100         # Max tags in "Tag Filter" bar
+    min_count: 1        # Minimum occurrences to be listed
+
 ai:
   # LLaVA model to use (automatically downloads on first run)
   model: "llava-hf/llava-1.5-7b-hf"
