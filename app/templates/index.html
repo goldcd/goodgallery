@@ -439,6 +439,20 @@
         }
 
         /* Tagging Controls */
+        .item-tags-container {
+            background: #f8f9fa;
+            padding: 10px;
+            border-top: 1px solid #f0f0f0;
+            display: none;
+            /* Hidden by default */
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .item-tags-container.active {
+            display: flex;
+        }
+
         .tag-button {
             background: #28a745;
             color: white;
@@ -703,7 +717,8 @@
 
             <div class="filename">
                 <span class="filename-text">{{ file.name }}</span>
-                <div class="tag-toggle-area">
+                <div class="tag-toggle-area"
+                    onclick="toggleImageTags(this, '{{ file.name|replace('.', '-') }}'); event.preventDefault();">
                     {% if tags_map.get(file.name) %}
                     <span class="tag-indicator tagged">
                         <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
@@ -722,6 +737,9 @@
                     {% endif %}
                 </div>
             </div>
+            <!-- Hidden container for tags -->
+            <div class="item-tags-container" id="tags-{{ file.name|replace('.', '-') }}" data-filename="{{ file.name }}"
+                data-tags="{{ tags_map.get(file.name, '') }}"></div>
         </div>
         {% endfor %}
         {% else %}
@@ -1524,6 +1542,94 @@
 
         // Poll every 5 seconds for file changes
         setInterval(checkForFileChanges, 5000);
+
+        // ===== Single Image Tag Section =====
+        const activeTagStates = {{ active_tag_states| tojson | safe }};
+
+        function toggleImageTags(triggerEl, containerId) {
+            const container = document.getElementById('tags-' + containerId);
+            const parentItem = container.closest('.gallery-item');
+            const filename = container.getAttribute('data-filename');
+
+            // If currently open, just close it and clear persistence
+            if (container.classList.contains('active')) {
+                container.classList.remove('active');
+                sessionStorage.removeItem('openTagSection');
+                return;
+            }
+
+            // Close all others first
+            document.querySelectorAll('.item-tags-container.active').forEach(el => {
+                el.classList.remove('active');
+            });
+
+            // Parse tags
+            const tagsStr = container.getAttribute('data-tags');
+            const tags = tagsStr ? tagsStr.split(',').map(t => t.trim()).filter(t => t) : [];
+
+            // Render HTML
+            let html = '';
+            if (tags.length === 0) {
+                html = '<span style="font-size:12px; color:#999; font-style:italic;">No tags</span>';
+            } else {
+                tags.forEach(tag => {
+                    const tagLower = tag.toLowerCase();
+                    const state = activeTagStates[tagLower] || 'neutral';
+
+                    let cls = 'tag-chip';
+                    if (state === 'include') cls += ' include';
+                    if (state === 'exclude') cls += ' exclude';
+
+                    html += `<div class="${cls}" data-tag="${tag}">` +
+                        `<span class="chip-label">${tag}</span>` + // No count
+                        `<span class="chip-btn btn-remove" title="Remove">✕</span>` +
+                        `<span class="chip-btn btn-plus" title="Include">AND</span>` +
+                        `<span class="chip-btn btn-minus" title="Exclude">NOT</span>` +
+                        `</div>`;
+                });
+            }
+
+            container.innerHTML = html;
+            container.classList.add('active');
+
+            // Attach handlers using the shared function
+            attachTagChipHandlers(container, activeTagStates);
+
+            // Persist
+            sessionStorage.setItem('openTagSection', filename);
+        }
+
+        function restoreTagSection() {
+            const openFilename = sessionStorage.getItem('openTagSection');
+            if (openFilename) {
+                const container = document.querySelector(`.item-tags-container[data-filename="${openFilename}"]`);
+                if (container) {
+                    // Find the trigger element (sibling's child) to effectively "click" it
+                    // Actually easier to just call the logic directly or simulate click on the toggle-area
+                    // The container has the data, but toggleImageTags needs the id.
+                    // Let's refactor slightly to just pass the container itself or ID.
+                    // The ID is constructed as `tags-${filename|replace('.', '-')}` but passing filename via python replace is tricky to match in JS exactly if complex.
+                    // Easier strategy: Find the trigger that matches.
+
+                    // Helper: Construct the ID or just find the trigger wrapper
+                    const galleryItem = container.closest('.gallery-item');
+                    if (galleryItem) {
+                        const trigger = galleryItem.querySelector('.tag-toggle-area');
+                        if (trigger) {
+                            trigger.click(); // Simulate user click to reuse all logic
+
+                            // Scroll into view
+                            setTimeout(() => {
+                                container.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+                            }, 0);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Call restore on load
+        document.addEventListener('DOMContentLoaded', restoreTagSection);
     </script>
 </body>
 
