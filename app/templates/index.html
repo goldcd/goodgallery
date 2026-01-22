@@ -490,6 +490,43 @@
             opacity: 0.6;
         }
 
+        /* Export Dropdown */
+        .export-dropdown {
+            position: relative;
+            display: inline-block;
+        }
+
+        .export-menu {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            min-width: 160px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            display: none;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+
+        .export-menu.active {
+            display: block;
+        }
+
+        .export-menu-item {
+            padding: 10px 15px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #333;
+            transition: background 0.1s;
+        }
+
+        .export-menu-item:hover {
+            background: #f8f9fa;
+        }
+
         .tag-button .count {
             background: rgba(255, 255, 255, 0.3);
             padding: 2px 8px;
@@ -685,6 +722,16 @@
                 🏷️ Tag <span class="count" id="untagged-count">{{ [0, total_files - tagged_count]|max }}</span>
                 Untagged
             </button>
+
+            <div class="export-dropdown">
+                <button class="tag-button" style="background: #17a2b8;" onclick="toggleExportMenu(event)">
+                    📥 Export ▼
+                </button>
+                <div id="exportMenu" class="export-menu">
+                    <div class="export-menu-item" onclick="exportCSV('all')">Export All Images</div>
+                    <div class="export-menu-item" onclick="exportCSV('filtered')">Export Selected</div>
+                </div>
+            </div>
 
             <form class="search-box" method="get">
                 <select name="t" id="searchType">
@@ -1645,6 +1692,35 @@
 
         // Call restore on load
         document.addEventListener('DOMContentLoaded', restoreTagSection);
+
+        // ===== CSV Export =====
+        function toggleExportMenu(e) {
+            e.stopPropagation();
+            const menu = document.getElementById('exportMenu');
+            menu.classList.toggle('active');
+        }
+
+        function exportCSV(mode) {
+            const params = new URLSearchParams(window.location.search);
+            let url = `/api/export?mode=${mode}`;
+
+            if (mode === 'filtered') {
+                if (params.has('q')) url += `&q=${encodeURIComponent(params.get('q'))}`;
+                if (params.has('t')) url += `&t=${encodeURIComponent(params.get('t'))}`;
+            }
+
+            // Trigger download
+            window.location.href = url;
+            document.getElementById('exportMenu').classList.remove('active');
+        }
+
+        // Close dropdowns on click outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.export-dropdown')) {
+                const menu = document.getElementById('exportMenu');
+                if (menu) menu.classList.remove('active');
+            }
+        });
     </script>
 </body>
 

@@ -63,7 +63,7 @@ class Database:
     def get_tagged_filenames(self) -> set:
         """Get set of all tagged filenames (case-insensitive)"""
         with self.get_connection() as conn:
-            cursor = conn.execute("SELECT filename FROM image_tags")
+            cursor = conn.execute("SELECT filename FROM image_tags WHERE tags IS NOT NULL AND tags != ''")
             return {row['filename'].lower() for row in cursor}
     
     def get_tags(self, filename: str) -> Optional[str]:

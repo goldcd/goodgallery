@@ -415,6 +415,7 @@ def api_delete():
         return jsonify({'error': 'Failed to delete'}), 500
 
 
+
 @app.route('/api/upload', methods=['POST'])
 def api_upload():
     """Handle photo uploads via drag-and-drop"""
@@ -464,6 +465,70 @@ def api_upload():
     except Exception as e:
         print(f"Upload error: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/export')
+def api_export():
+    """Export filtered or all images to CSV"""
+    import csv
+    import io
+    from datetime import datetime
+    
+    # mode: 'all' or 'filtered' (default)
+    mode = request.args.get('mode', 'filtered')
+    search_query = request.args.get('q', '').strip()
+    search_type = request.args.get('t', 'tag')
+    
+    # 1. Determine which files to export
+    if mode == 'all' or not search_query:
+        # Export all files (ignore query)
+        files = gallery.get_file_index()
+        filename_prefix = "Full"
+    else:
+        # Export filtered results
+        files = gallery.get_file_index()
+        if search_type == 'name':
+            files = gallery.search_by_filename(files, search_query)
+        else:
+            search_terms = gallery.parse_tag_search(search_query)
+            matching_filenames = db.search_by_tags(search_terms)
+            matching_set = set(f.lower() for f in matching_filenames)
+            files = [f for f in files if f['name'].lower() in matching_set]
+        filename_prefix = "Partial"
+
+    # 2. Generate CSV output
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Header
+    writer.writerow(['Filename', 'Tags'])
+    
+    # Rows
+    for file in files:
+        tags_str = db.get_tags(file['name'])
+        # Clean tags similar to index route for consistency
+        clean_tags = ""
+        if tags_str:
+            tag_list = [tag.strip(' *') for tag in tags_str.split(',')]
+            tag_list = sorted([t for t in tag_list if t], key=str.lower)
+            clean_tags = ', '.join(tag_list)
+            
+        writer.writerow([file['name'], clean_tags])
+    
+    # 3. Create response
+    output.seek(0)
+    
+    # Filename format: Full_20240122_153000.csv
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    download_filename = f"{filename_prefix}_{timestamp}.csv"
+    
+    return send_file(
+        io.BytesIO(output.getvalue().encode('utf-8')),
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name=download_filename
+    )
+
 
 
 
