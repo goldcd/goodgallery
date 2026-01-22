@@ -45,9 +45,8 @@ ai:
     Generate a comprehensive, comma-separated list of keywords describing this image.
     Focus on: main objects, people, actions, location, time, lighting, style, and mood.
     Do NOT include the category names themselves. Do NOT use bullet points or numbering.
-    Return ONLY the keywords, separated by commas.
+    Return ONLY the keywords, separated by commas. Double check your response conforms to these provided rules, before returning it.
     Example: car, woman, running, beach, sunny, sketch, vintage, afternoon
-    Double check your response conforms to these provided rules, before returning it.
     ASSISTANT:
 
 database:

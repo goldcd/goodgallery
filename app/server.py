@@ -233,12 +233,12 @@ def serve_thumbnail(filename):
             thumb_path = thumbs.get_or_create(actual_filename)
 
     if thumb_path and os.path.exists(thumb_path):
-        return send_file(thumb_path)
+        return send_file(thumb_path, max_age=31536000)
     
     # Fallback to original if thumbnail fails
     original_path = resolve_file_path(gallery.photo_dir, filename)
     if original_path:
-        return send_file(original_path)
+        return send_file(original_path, max_age=31536000)
     
     abort(404)
 
@@ -253,7 +253,7 @@ def serve_image(filename):
     image_path = resolve_file_path(gallery.photo_dir, filename)
     
     if image_path:
-        return send_file(image_path)
+        return send_file(image_path, max_age=31536000)
     
     abort(404)
 
