@@ -305,12 +305,14 @@
         .gallery-item {
             background: white;
             border-radius: 8px;
-            overflow: hidden;
+            overflow: visible;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
             transition: transform 0.2s, box-shadow 0.2s;
             display: flex;
             flex-direction: column;
             height: 100%;
+            position: relative;
+            /* Context for absolute tag container */
         }
 
         .gallery-item:hover {
@@ -325,6 +327,8 @@
             overflow: hidden;
             width: 100%;
             flex-shrink: 0;
+            border-radius: 8px 8px 0 0;
+            /* Rounded top corners */
         }
 
         .thumb-container img {
@@ -440,13 +444,21 @@
 
         /* Tagging Controls */
         .item-tags-container {
-            background: #f8f9fa;
+            background: #fff;
             padding: 10px;
-            border-top: 1px solid #f0f0f0;
+            border: 1px solid #ddd;
+            border-top: none;
             display: none;
             /* Hidden by default */
             flex-wrap: wrap;
             gap: 6px;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            border-radius: 0 0 8px 8px;
         }
 
         .item-tags-container.active {
@@ -1231,8 +1243,10 @@
                     }
 
                     if (tags.length === 0) {
-                        document.getElementById('filterBar').style.display = 'none';
-                        return;
+                        // Keep visible if already expanded, or just show empty state
+                        // document.getElementById('filterBar').style.display = 'none'; 
+                        // return;
+                        // User request: "leave it open/visible with no tags selected"
                     }
 
                     const tagCount = tags.length;
@@ -1596,6 +1610,7 @@
             attachTagChipHandlers(container, activeTagStates);
 
             // Persist
+            // Refresh persistence to keep it open
             sessionStorage.setItem('openTagSection', filename);
         }
 
