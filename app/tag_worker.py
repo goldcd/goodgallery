@@ -63,6 +63,14 @@ def main():
     
     # Process ALL images in batches
     all_results = []
+    
+    # Open output file in append mode for streaming results
+    # We use a simple JSONL-like format (one JSON object per line) or just append to a list if needed
+    # But since the server expects a specific format, we'll write incremental updates
+    
+    # Actually, for the incremental approach agreed in the plan:
+    # We will treat the output file as a JSONL stream of batches
+    
     for i in range(0, total_images, batch_size):
         batch_paths = all_image_paths[i:i+batch_size]
         batch_num = i // batch_size + 1
@@ -70,21 +78,32 @@ def main():
         
         update_progress(i, f'Processing batch {batch_num}/{total_batches}...')
         print(f"[WORKER] Processing batch {batch_num}/{total_batches} ({len(batch_paths)} images)...")
+        # Flush stdout to ensure it hits the log file immediately
+        sys.stdout.flush()
         
         results = tagger.tag_batch(batch_paths)
         all_results.extend(results)
         
+        # Write this batch's results immediately
+        try:
+            with open(output_file, 'a', encoding='utf-8') as f:
+                # Write as a JSON line per batch
+                f.write(json.dumps(results) + '\n')
+        except Exception as e:
+            print(f"[WORKER] Error writing batch results: {e}")
+            sys.stdout.flush()
+        
         processed = min(i + batch_size, total_images)
         update_progress(processed, f'Batch {batch_num}/{total_batches} complete')
         print(f"[WORKER] Progress: {processed}/{total_images} images tagged")
+        sys.stdout.flush()
     
-    # Save ALL results
-    update_progress(total_images, 'Saving results...')
-    with open(output_file, 'w') as f:
-        json.dump(all_results, f)
+    # Final progress update
+    update_progress(total_images, 'Complete')
     
     print(f"[WORKER] Complete - tagged {len(all_results)} images")
-    print(f"[WORKER] Results written to: {output_file}")
+    print(f"[WORKER] Results streamed to: {output_file}")
+    sys.stdout.flush()
     
     # Exit cleanly - OS will release ALL GPU memory
     sys.exit(0)

@@ -43,3 +43,6 @@ desktop.ini
 
 # Test environment
 test/
+
+# Resources used as a reference
+resources/  

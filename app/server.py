@@ -683,94 +683,132 @@ def manual_tagging_worker():
         
         # Create temporary files for worker communication
         config_fd, config_file = tempfile.mkstemp(suffix='.json', text=True)
-        output_fd, output_file = tempfile.mkstemp(suffix='.json', text=True)
-        progress_fd, progress_file = tempfile.mkstemp(suffix='.json', text=True)  # NEW: progress file
-        os.close(progress_fd)  # Worker will write to this
+        # Use .jsonl suffix to indicate line-delimited JSON for the stream
+        output_fd, output_file = tempfile.mkstemp(suffix='.jsonl', text=True)
+        progress_fd, progress_file = tempfile.mkstemp(suffix='.json', text=True)
+        log_fd, log_file = tempfile.mkstemp(suffix='.log', text=True) # Log file for stdout/stderr
+        
+        os.close(output_fd) # Worker will write to this
+        os.close(progress_fd)
+        os.close(log_fd) 
         
         try:
-            # Write worker configuration with ALL images
+            # Write worker configuration
             worker_config = {
                 'image_paths': image_paths,
                 'output_file': output_file,
                 'model_config': model_config,
-                'progress_file': progress_file,  # Pass progress file to worker
-                'total_images': total  # So worker can report progress
+                'progress_file': progress_file,
+                'total_images': total
             }
             
             with os.fdopen(config_fd, 'w') as f:
                 json.dump(worker_config, f)
             
-            os.close(output_fd)  # Close FD, worker will write to file
-            
-            # Spawn worker process - it will handle ALL batches internally
+            # Spawn worker process
             worker_script = os.path.join(ROOT_DIR, 'app', 'tag_worker.py')
             
             with tagging_lock:
                 tagging_state['status'] = f'Starting worker subprocess for {total} images...'
             
-            # Force UTF-8 encoding for subprocess to avoid Windows cp1252 issues
+            # Force UTF-8 encoding
             env = os.environ.copy()
             env['PYTHONIOENCODING'] = 'utf-8'
             
             print(f"[SERVER] Spawning worker for {total} images...")
+            print(f"[SERVER] Logging worker output to: {log_file}")
             
-            # Start subprocess - worker will process all batches
-            process = subprocess.Popen(
-                [sys.executable, worker_script, config_file],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=env
-            )
-            
-            # Poll subprocess and update progress by reading progress file
-            import time
-            while process.poll() is None:
-                # Check for cancellation
-                with tagging_lock:
-                    if tagging_state['cancel_requested']:
-                        process.terminate()
-                        process.wait(timeout=5)
-                        tagging_state['running'] = False
-                        tagging_state['status'] = 'Cancelled by user'
-                        return
+            # Open log file for writing
+            with open(log_file, 'w') as log_f:
+                # Start subprocess - REDIRECT STDOUT/STDERR TO FILE TO PREVENT DEADLOCK
+                process = subprocess.Popen(
+                    [sys.executable, worker_script, config_file],
+                    stdout=log_f,
+                    stderr=subprocess.STDOUT, # Merge stderr into stdout
+                    text=True,
+                    env=env
+                )
                 
-                # Read progress from worker's progress file
+                # Poll loop
+                import time
+                last_size = 0
+                file_pos = 0 # Position in output file
+                
+                while process.poll() is None:
+                    # 1. Check for cancellation
+                    with tagging_lock:
+                        if tagging_state['cancel_requested']:
+                            process.terminate()
+                            process.wait(timeout=5)
+                            tagging_state['running'] = False
+                            tagging_state['status'] = 'Cancelled by user'
+                            return
+                    
+                    # 2. Read progress status
+                    try:
+                        with open(progress_file, 'r') as f:
+                            progress_data = json.load(f)
+                            with tagging_lock:
+                                tagging_state['current'] = progress_data.get('current', 0)
+                                tagging_state['status'] = progress_data.get('status', 'Processing...')
+                    except:
+                        pass
+                    
+                    # 3. Read INCREMENTAL results from output file
+                    try:
+                        if os.path.exists(output_file):
+                            current_size = os.path.getsize(output_file)
+                            if current_size > last_size:
+                                with open(output_file, 'r', encoding='utf-8') as f:
+                                    f.seek(file_pos)
+                                    new_data = f.read()
+                                    file_pos = f.tell()
+                                    last_size = current_size
+                                    
+                                    # Parse new lines (each line is a batch of results)
+                                    for line in new_data.splitlines():
+                                        if line.strip():
+                                            batch_results = json.loads(line)
+                                            # incremental save
+                                            db.save_tags_batch(batch_results)
+                                            print(f"[SERVER] Saved incremental batch of {len(batch_results)} tags")
+                    except Exception as e:
+                        print(f"[SERVER] Error reading incremental results: {e}")
+                    
+                    time.sleep(1)
+                
+                # Process finished
+                
+                # Check exit code
+                if process.returncode != 0:
+                    # Read log file to get error
+                    with open(log_file, 'r') as f:
+                        log_content = f.read()
+                    
+                    error_msg = f"Worker failed (exit {process.returncode})\nLog:\n{log_content[-1000:]}" # Last 1000 chars
+                    raise Exception(error_msg)
+                
+                # Final check for any remaining results output
                 try:
-                    with open(progress_file, 'r') as f:
-                        progress_data = json.load(f)
-                        with tagging_lock:
-                            tagging_state['current'] = progress_data.get('current', 0)
-                            tagging_state['status'] = progress_data.get('status', 'Processing...')
-                except:
-                    # Progress file may not exist yet or be incomplete
-                    pass
+                    current_size = os.path.getsize(output_file)
+                    if current_size > last_size:
+                        with open(output_file, 'r', encoding='utf-8') as f:
+                            f.seek(file_pos)
+                            new_data = f.read()
+                            for line in new_data.splitlines():
+                                if line.strip():
+                                    batch_results = json.loads(line)
+                                    db.save_tags_batch(batch_results)
+                except Exception as e:
+                    print(f"[SERVER] Error reading final results: {e}")
                 
-                time.sleep(1)  # Poll every second
-            
-            # Process completed - get output
-            stdout, stderr = process.communicate()
-            
-            if process.returncode != 0:
-                error_msg = f"Worker failed (exit {process.returncode})"
-                if stderr:
-                    error_msg += f"\nStderr: {stderr}"
-                if stdout:
-                    error_msg += f"\nStdout: {stdout}"
-                raise Exception(error_msg)
-            
-            # Read results from worker
-            with open(output_file, 'r') as f:
-                results = json.load(f)
-            
-            # Save tags to database
-            db.save_tags_batch(results)
-            
-            # Update progress
-            with tagging_lock:
-                tagging_state['current'] = total
-            
-            print(f"[SERVER] Worker complete - processed {len(results)} images, GPU memory released")
+                # Update final state
+                with tagging_lock:
+                    tagging_state['current'] = total
+                    tagging_state['running'] = False
+                    tagging_state['status'] = 'Complete'
+                
+                print(f"[SERVER] Worker complete - GPU memory released")
             
         except subprocess.TimeoutExpired:
             with tagging_lock:
@@ -778,24 +816,21 @@ def manual_tagging_worker():
                 tagging_state['running'] = False
             return
         except Exception as e:
+            print(f"[SERVER] Error in tagging worker: {e}")
             with tagging_lock:
                 tagging_state['error'] = str(e)
                 tagging_state['running'] = False
             return
         finally:
             # Cleanup temporary files
-            try:
-                os.unlink(config_file)
-            except:
-                pass
-            try:
-                os.unlink(output_file)
-            except:
-                pass
-            try:
-                os.unlink(progress_file)  # Clean up progress file too
-            except:
-                pass
+            for temp_file in [config_file, output_file, progress_file, log_file]:
+                try:
+                    if os.path.exists(temp_file):
+                        # Give system a moment to release file handles
+                        time.sleep(0.1)
+                        os.unlink(temp_file)
+                except Exception as e:
+                    print(f"[SERVER] Warning: Failed to cleanup {temp_file}: {e}")
         
         # Complete
         with tagging_lock:
