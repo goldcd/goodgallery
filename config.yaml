@@ -38,10 +38,6 @@ ai:
 
   # Keep model loaded in GPU memory (faster but uses more VRAM)
   keep_model_loaded: false
-  
-  # Number of images to process per GPU batch
-  batch_size: 15
-  
   # Enable 4-bit quantization (fits in ~6GB VRAM)
   use_quantization: true
   
@@ -49,12 +45,47 @@ ai:
   # This prompt is sent to the AI model for each image.
   # You can modify this to change what the AI focuses on when analyzing images.
   # The prompt must follow the LLaVA conversation format: "USER: <image>\n...text...\nASSISTANT:"
+  # tagging_prompt: |
+    #Initial LLaVA prompt
+    # USER: <image>
+    # Analyze the image and generate a single, comprehensive, comma-separated list of keywords, listed in their descending importance as a description of the image
+    # Include keywords for: main objects, people (including names of famous figures if recognized), actions, location, time of day, lighting, artistic style, mood, fictional characters, memes, distinctive features and anything else that seems to be a relevant keyword to search on this image by.
+    # Do not transcribe text. Do not use categories or labels. Just keywords.
+    # Example: car, woman, running, beach, sunny, sketch, vintage, afternoon
+    # ASSISTANT:
   tagging_prompt: |
     USER: <image>
-    Analyze the image and generate a single, comprehensive, comma-separated list of keywords, listed in their descending importance as a description of the image
-    Include keywords for: main objects, people (including names of famous figures if recognized), actions, location, time of day, lighting, artistic style, mood, fictional characters, memes, distinctive features and anything else that seems to be a relevant keyword to search on this image by.
-    Do not transcribe text. Do not use categories or labels. Just keywords.
-    Example: car, woman, running, beach, sunny, sketch, vintage, afternoon
+    SYSTEM:
+    You are a high-precision image annotation assistant.
+    
+    TASK:
+    Generate a comma-separated list of tags based ONLY on what is clearly visible in the image.
+    
+    RULES:
+    - Tags must be 1–2 words each
+    - Only include items with >80% visual certainty
+    - Focus on:
+      • Notable objects
+      • Specific people or landmarks (if clearly identifiable)
+      • Overall scene or activity
+    - No explanations
+    - No brackets
+    - No placeholders
+    - No transcription of text
+    - Do NOT describe uncertainty
+    
+    PROCESS:
+    1. Analysis: Mentally identify the core subjects and environment.
+    2. Grounding: Mentally formulate a three-sentence summary of the image to lock in visual facts.
+    3. Extraction: Generate the tags based strictly on that summary and the image.
+    4. Validation: Delete any tags that are not explicitly visible.
+    5. Iterate: If output does not match rules stated, abandon process and start again.
+    
+    OUTPUT FORMAT:
+    Comma-separated list only.
+    Alphabetical characters ONLY and comma for separation only.
+    EXAMPLE (format only — do not reuse these tags, unless in the image):
+    Man, Red Car, City Street
     ASSISTANT:
 
 database:
