@@ -746,6 +746,20 @@
                 </div>
             </div>
 
+            <!-- New Consolidation Controls -->
+            <a href="/consolidate" class="tag-button" style="background: #6f42c1; text-decoration:none;">
+                ✨ Consolidate
+            </a>
+
+            <div class="search-box">
+                <label style="font-size:12px; font-weight:600; color:#666; margin-right:5px;">View:</label>
+                <select id="viewMode" onchange="changeViewMode(this.value)" style="padding:8px;">
+                    <option value="raw" {% if request.args.get('view') !='clean' %}selected{% endif %}>Raw Tags</option>
+                    <option value="clean" {% if request.args.get('view')=='clean' %}selected{% endif %}>Clean Tags
+                    </option>
+                </select>
+            </div>
+
             <form class="search-box" method="get">
                 <select name="t" id="searchType">
                     <option value="tag" {% if search_type=='tag' %}selected{% endif %}>Tags</option>
@@ -883,7 +897,8 @@
                 <div class="progress-fill" id="progress-fill"></div>
             </div>
             <p class="progress-text" id="progress-text">0 / 0 images tagged</p>
-            <p class="progress-text" id="time-remaining" style="font-size: 12px; color: #666; margin-top: 5px; min-height: 18px;"></p>
+            <p class="progress-text" id="time-remaining"
+                style="font-size: 12px; color: #666; margin-top: 5px; min-height: 18px;"></p>
             <button class="cancel-button" id="cancel-btn" onclick="cancelTagging()">Cancel</button>
         </div>
     </div>
@@ -962,7 +977,7 @@
                         document.getElementById('progress-fill').textContent = percent + '%';
                         document.getElementById('progress-text').textContent = `${data.current} / ${data.total} images tagged`;
                         document.getElementById('progress-status').textContent = data.status || 'Processing...';
-                        
+
                         // Update time estimate
                         if (data.estimate_seconds !== undefined) {
                             const minutes = Math.floor(data.estimate_seconds / 60);
@@ -1749,6 +1764,14 @@
                 if (menu) menu.classList.remove('active');
             }
         });
+
+        function changeViewMode(mode) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('view', mode);
+            // Reset page on view change
+            url.searchParams.set('page', 1);
+            window.location.href = url.toString();
+        }
     </script>
 </body>
 

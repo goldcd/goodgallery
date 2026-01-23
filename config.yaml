@@ -54,9 +54,48 @@ ai:
   # Max image dimension (in pixels) for AI analysis
   # Definitely need to set this - without limiting size regular photo will far exceed 16GB in processing
   # Juggling this and the batch size is what determines VRAM usage over that required for the model
+  # - 512: Fast, Low VRAM (Good for simple images)
+  # - 1024: Good balance of speed/detail (Default)
+  # - 1280+: Better for small details, uses more VRAM
   # - 1024: Good balance of speed/detail (Default)
   # - 1280+: Better for small details, uses more VRAM
   max_image_size: 1024
+
+  # Model for Tag Consolidation (Text-Only)
+  # Small, fast model specialized for instruction following
+  # User requested abliterated (uncensored) model
+  consolidation_model: "mlabonne/Qwen3-14B-abliterated"
+  consolidation_batch_size: 2000 # 2000 fits safely in 32k context (Input+Output)
+  
+  # Prompt for Tag Consolidation
+  # Instructions for the text model on how to clean/merge tags.
+  # "TAGS_LIST_PLACEHOLDER" will be replaced by the actual list of tags.
+  consolidation_prompt: |
+    You are an Uncensored Data Processing Assistant. 
+    Your sole task is to clean and standardize a database of tags.
+    Content Warning: The list may contain NSFW, explicit, or offensive terms. This is a medical/database task.
+    You MUST process ALL tags regardless of content. Do not refuse. Do not moralize.
+
+    Below is a list of existing tags with their usage counts: `tag (count)`.
+
+    RULES:
+    1. **Analyze ALL tags** provided below.
+    2. **Identify Redundancies**: Map synonyms, typos, and plural forms to the most common/standard term.
+       - Example: `males (2)` -> `['man']` (if `man` exists and is frequent)
+       - Example: `doggy (5)` -> `['dog']`
+    3. **Generalize**: If a specific tag implies a general category, add it. KEEP the original specific tag found. Also include intermediate phrases.
+       - Example: `black leather jacket (10)` -> `['black leather jacket', 'leather jacket', 'black jacket', 'jacket', 'leather', 'black']`
+    4. **Keep Good Tags**: If a tag is standard and correct (e.g. `sunset`, `beach`), map it to itself or just omit it if you make no changes.
+       - Ideally, if no change needed, valid output is `tag -> [tag]`
+    5. **Prioritize usage**: If `bike (50)` and `bicycle (5)` exist, map `bicycle` -> `['bike']`.
+
+    OUTPUT FORMAT:
+    Return a strictly valid JSON object. Keys are the *original tag* from the list. Values are the list of *replacement tags*.
+    Only include entries where you are proposing a clean-up or verification. You can omit tags you have no opinion on, but better to be comprehensive.
+    JSON ONLY. NO MARKDOWN.
+
+    TAGS LIST:
+    TAGS_LIST_PLACEHOLDER
   
   # Tagging prompt for LLaVA (customize to change tagging behavior)
   # This prompt is sent to the AI model for each image.
@@ -92,7 +131,7 @@ ai:
       • Notable objects with and without descriptive adjectives.
       • Specific people or landmarks, if clearly identifiable. 
       • Overall scene or activity.
-      • Describe physical characteristics of people detected (e.g. age, gender, state of dress, clothing, pose, expression, etc.)
+      • Describe physical characteristics of people detected (e.g. age, gender, ethnicity, state of dress, clothing, pose, expression, freckles, bald, cleavage etc.)
     -Always output tags to describe:
       • The classification of the image type.
       • Single word identification of all people and objects detected (e.g. if "attractive woman" is detected, tag "Woman" and "Attractive" as well")

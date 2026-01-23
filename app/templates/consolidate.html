@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consolidate Tags - {{ app_title }}</title>
+    <style>
+        body {
+            font-family: -apple-system, system-ui, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            margin-top: 0;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 20px;
+        }
+
+        .actions {
+            margin: 20px 0;
+            display: flex;
+            gap: 10px;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .main-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-outline {
+            background: white;
+            border: 1px solid #ddd;
+            color: #666;
+        }
+
+        .btn-outline:hover {
+            background: #f8f9fa;
+        }
+
+        .btn-sm {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            table-layout: fixed;
+        }
+
+        th,
+        td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+            word-wrap: break-word;
+        }
+
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        th:hover {
+            background: #e9ecef;
+        }
+
+        .sort-icon::after {
+            content: ' ↕';
+            opacity: 0.3;
+        }
+
+        .sort-asc::after {
+            content: ' ↑';
+            opacity: 1;
+        }
+
+        .sort-desc::after {
+            content: ' ↓';
+            opacity: 1;
+        }
+
+        .count-badge {
+            background: #e9ecef;
+            color: #495057;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .bulk-bar {
+            background: #e8f0fe;
+            padding: 10px 20px;
+            border-radius: 4px;
+            border: 1px solid #b8daff;
+            display: none;
+            align-items: center;
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .bulk-bar.active {
+            display: flex;
+        }
+
+        .tags-input {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        #progress-area {
+            margin: 20px 0;
+            padding: 15px;
+            background: #e9ecef;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .loader {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid #ccc;
+            border-top-color: #333;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .checkbox-col {
+            width: 40px;
+            text-align: center;
+        }
+
+        .count-col {
+            width: 80px;
+        }
+
+        .original-col {
+            width: 25%;
+        }
+
+        .replacement-col {
+            width: 40%;
+        }
+
+        .actions-col {
+            width: 20%;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h1>Consolidate Tags</h1>
+            <a href="/" style="text-decoration:none; color:#666;">&larr; Back to Gallery</a>
+        </div>
+
+        <div class="actions">
+            <div class="main-actions">
+                <button class="btn-primary" onclick="generateRules()">⚡ Generate (AI)</button>
+                <button class="btn-success" onclick="applyRules()">💾 Apply Rules</button>
+            </div>
+
+            <div class="filter-actions">
+                <label
+                    style="display:flex; align-items:center; gap:5px; font-size:14px; color:#555; background:white; padding:5px 10px; border:1px solid #ddd; border-radius:4px; cursor:pointer;">
+                    <input type="checkbox" id="hideUnchanged" checked onchange="renderTable()">
+                    Hide Unchanged
+                </label>
+            </div>
+        </div>
+
+        <div id="progress-area">
+            <span class="loader"></span> <span id="progress-text">Processing...</span>
+        </div>
+
+        <div class="tabs" style="margin-top:20px; border-bottom:1px solid #ddd;">
+            <button class="btn-secondary"
+                style="background:none; color:#333; border-bottom:2px solid #007bff; border-radius:0;"
+                onclick="loadRules('pending')">Pending Review</button>
+            <button class="btn-secondary" style="background:none; color:#666; border-radius:0;"
+                onclick="loadRules('approved')">Approved</button>
+            <button class="btn-secondary" style="background:none; color:#666; border-radius:0;"
+                onclick="loadRules('rejected')">Rejected</button>
+        </div>
+
+        <!-- Bulk Action Bar -->
+        <div id="bulkBar" class="bulk-bar">
+            <strong><span id="selectedCount">0</span> selected</strong>
+            <span style="color:#666;">&rarr;</span>
+            <input type="text" id="bulkInput" placeholder="Set replacement tags (comma values)..." class="tags-input"
+                style="width: 300px;">
+            <button class="btn-primary btn-sm" onclick="applyBulkEdit()">Set & Approve</button>
+            <button class="btn-outline btn-sm" onclick="deselectAll()">Cancel</button>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th class="checkbox-col"><input type="checkbox" id="selectAll" onclick="toggleSelectAll()"></th>
+                    <th class="original-col sort-icon" onclick="sortRules('original_tag')">Original Tag</th>
+                    <th class="count-col sort-icon" onclick="sortRules('count')">Count</th>
+                    <th class="replacement-col sort-icon" onclick="sortRules('replacement_tags')">Replacement Tags
+                        (Proposed)</th>
+                    <th class="actions-col">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="rules-table">
+                <!-- Rows here -->
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        let currentStatus = 'pending';
+        let allRules = []; // Store currently loaded rules for sorting
+        let sortKey = 'replacement_tags'; // Default sort by replacement to group them
+        let sortAsc = true;
+        let selectedRules = new Set(); // Store original tags of selected rows
+
+        function loadRules(status) {
+            currentStatus = status;
+            // Update tabs visual style
+            document.querySelectorAll('.tabs button').forEach(b => {
+                b.style.borderBottom = b.innerText.toLowerCase().includes(status) ? '2px solid #007bff' : 'none';
+                b.style.color = b.innerText.toLowerCase().includes(status) ? '#333' : '#666';
+            });
+
+            // Clear selection
+            deselectAll();
+
+            fetch(`/api/consolidate/rules?status=${status}&_t=${new Date().getTime()}`)
+                .then(r => r.json())
+                .then(data => {
+                    allRules = data.rules;
+                    renderTable();
+                });
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('rules-table');
+            tbody.innerHTML = '';
+
+            // Filter
+            const hideUnchanged = document.getElementById('hideUnchanged') ? document.getElementById('hideUnchanged').checked : false;
+
+            filteredRules = allRules.filter(r => {
+                if (hideUnchanged) {
+                    const original = r.original_tag.toLowerCase().trim();
+                    const replacement = r.replacement_tags.join(', ').toLowerCase().trim();
+                    // If length is different (e.g. split), it's a change
+                    if (r.replacement_tags.length !== 1) return true;
+                    if (original === replacement) return false;
+                }
+                return true;
+            });
+
+            // Sort
+            filteredRules.sort((a, b) => {
+                let va = a[sortKey];
+                let vb = b[sortKey];
+
+                // Handle replacement array vs string
+                if (sortKey === 'replacement_tags' && Array.isArray(va)) va = va.join(', ');
+                if (sortKey === 'replacement_tags' && Array.isArray(vb)) vb = vb.join(', ');
+
+                // Case insensitive string compare
+                if (typeof va === 'string') va = va.toLowerCase();
+                if (typeof vb === 'string') vb = vb.toLowerCase();
+
+                if (va < vb) return sortAsc ? -1 : 1;
+                if (va > vb) return sortAsc ? 1 : -1;
+                return 0;
+            });
+
+            // Update headers
+            document.querySelectorAll('th').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc');
+                if (th.getAttribute('onclick') && th.getAttribute('onclick').includes(sortKey)) {
+                    th.classList.add(sortAsc ? 'sort-asc' : 'sort-desc');
+                }
+            });
+
+            if (filteredRules.length === 0) {
+                if (allRules.length > 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:30px; color:#999;">No changes found (hidden). Uncheck "Hide Unchanged" to see all.</td></tr>';
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:30px; color:#999;">No rules found</td></tr>';
+                }
+                return;
+            }
+
+            filteredRules.forEach(rule => {
+                const tr = document.createElement('tr');
+                const isSelected = selectedRules.has(rule.original_tag);
+                if (isSelected) tr.style.background = '#f8f9fa';
+
+                const replacementStr = rule.replacement_tags.join(', ');
+
+                const isEditable = currentStatus === 'pending' || currentStatus === 'approved';
+                const inputHtml = isEditable
+                    ? `<input type="text" class="tags-input" value="${replacementStr}" id="input-${rule.original_tag}" onchange="checkRow('${rule.original_tag}')">`
+                    : replacementStr;
+
+                tr.innerHTML = `
+                    <td class="checkbox-col">
+                        <input type="checkbox" 
+                               value="${rule.original_tag}" 
+                               class="row-select" 
+                               ${isSelected ? 'checked' : ''} 
+                               onchange="toggleRow('${rule.original_tag}')">
+                    </td>
+                    <td>${rule.original_tag}</td>
+                    <td><span class="count-badge">${rule.count || 0}</span></td>
+                    <td>${inputHtml}</td>
+                    <td>
+                        ${getActionsHtml(rule)}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function getActionsHtml(rule) {
+            if (currentStatus === 'pending') {
+                return `
+                    <button class="btn-success btn-sm" onclick="updateRule('${rule.original_tag}', 'approved')">Apply</button>
+                    <button class="btn-danger btn-sm" onclick="updateRule('${rule.original_tag}', 'rejected')">Reject</button>
+                `;
+            } else if (currentStatus === 'approved') {
+                return `
+                    <button class="btn-primary btn-sm" onclick="updateRule('${rule.original_tag}', 'approved')">Update</button>
+                    <button class="btn-danger btn-sm" onclick="updateRule('${rule.original_tag}', 'rejected')">Reject</button>
+                `;
+            } else {
+                return `<button class="btn-secondary btn-sm" onclick="updateRule('${rule.original_tag}', 'pending')">Re-review</button>`;
+            }
+        }
+
+        function sortRules(key) {
+            if (sortKey === key) {
+                sortAsc = !sortAsc;
+            } else {
+                sortKey = key;
+                sortAsc = true;
+            }
+            renderTable();
+        }
+
+        // Selection Logic
+        function toggleRow(originalTag) {
+            if (selectedRules.has(originalTag)) {
+                selectedRules.delete(originalTag);
+            } else {
+                selectedRules.add(originalTag);
+            }
+            updateBulkBar();
+        }
+
+        function toggleSelectAll() {
+            const check = document.getElementById('selectAll').checked;
+            if (check) {
+                allRules.forEach(r => selectedRules.add(r.original_tag));
+            } else {
+                selectedRules.clear();
+            }
+            renderTable(); // Re-render to update checkboxes
+            updateBulkBar();
+        }
+
+        function deselectAll() {
+            selectedRules.clear();
+            const check = document.getElementById('selectAll');
+            if (check) check.checked = false;
+            updateBulkBar();
+            renderTable();
+        }
+
+        function updateBulkBar() {
+            const count = selectedRules.size;
+            document.getElementById('selectedCount').innerText = count;
+            const bar = document.getElementById('bulkBar');
+            if (count > 0) {
+                bar.classList.add('active');
+            } else {
+                bar.classList.remove('active');
+            }
+        }
+
+        function checkRow(originalTag) {
+            // Auto-select row if edited? Maybe not, complicates things.
+            // Just update local Model in case we re-sort without fetching
+            const input = document.getElementById(`input-${originalTag}`);
+            if (input) {
+                const rule = allRules.find(r => r.original_tag === originalTag);
+                if (rule) {
+                    rule.replacement_tags = input.value.split(',').map(t => t.trim()).filter(t => t);
+                }
+            }
+        }
+
+        // Action Logic
+        function updateRule(original, newStatus, replacementsOverride = null) {
+            let replacements = replacementsOverride;
+
+            // If valid input exists on page, use it (unless override provided)
+            if (!replacements) {
+                const input = document.getElementById(`input-${original}`);
+                if (input) {
+                    replacements = input.value.split(',').map(t => t.trim()).filter(t => t);
+                } else {
+                    // Get from model
+                    const r = allRules.find(x => x.original_tag === original);
+                    if (r) replacements = r.replacement_tags;
+                }
+            }
+
+            fetch('/api/consolidate/rules', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    original_tag: original,
+                    status: newStatus,
+                    replacement_tags: replacements
+                })
+            }).then(() => {
+                // Remove from current list view?
+                // Yes, better than reloading everything
+                // Actually reloading ensures sync.
+                // Optimistic removal:
+                allRules = allRules.filter(r => r.original_tag !== original);
+                renderTable();
+            });
+        }
+
+        function applyBulkEdit() {
+            const val = document.getElementById('bulkInput').value;
+            const replacements = val.split(',').map(t => t.trim()).filter(t => t);
+
+            if (selectedRules.size === 0) return;
+            if (!confirm(`Apply "${replacements.join(', ')}" to ${selectedRules.size} tags and Approve them?`)) return;
+
+            const promises = [];
+            selectedRules.forEach(original => {
+                promises.push(fetch('/api/consolidate/rules', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        original_tag: original,
+                        status: 'approved',
+                        replacement_tags: replacements
+                    })
+                }));
+            });
+
+            Promise.all(promises).then(() => {
+                deselectAll();
+                document.getElementById('bulkInput').value = '';
+                loadRules(currentStatus); // Reload full state
+            });
+        }
+
+        function generateRules() {
+            if (!confirm("Start AI Analysis? This runs in background.")) return;
+            const p = document.getElementById('progress-area');
+            const pt = document.getElementById('progress-text');
+            p.style.display = 'block';
+            pt.innerText = 'Starting...';
+
+            fetch('/api/consolidate/generate', { method: 'POST' })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.error) {
+                        alert(d.error);
+                        p.style.display = 'none';
+                    } else {
+                        pollStatus();
+                    }
+                });
+        }
+
+        function applyRules() {
+            if (!confirm("Apply ALL Approved rules to images?")) return;
+            const p = document.getElementById('progress-area');
+            const pt = document.getElementById('progress-text');
+            p.style.display = 'block';
+            pt.innerText = 'Applying...';
+
+            fetch('/api/consolidate/apply', { method: 'POST' })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.error) {
+                        alert(d.error);
+                        p.style.display = 'none';
+                    } else {
+                        pollStatus();
+                    }
+                });
+        }
+
+        function pollStatus() {
+            const interval = setInterval(() => {
+                fetch('/api/tagging_status')
+                    .then(r => r.json())
+                    .then(data => {
+                        const pt = document.getElementById('progress-text');
+                        if (data.running) {
+                            pt.innerText = `${data.status} (Current: ${data.current})`;
+                        } else {
+                            clearInterval(interval);
+                            pt.innerText = data.status || 'Done!';
+                            console.log("Process complete. Reloading...");
+                            setTimeout(() => {
+                                document.getElementById('progress-area').style.display = 'none';
+                                // Always reload 'pending' if we just generated
+                                if (pt.innerText.includes('Gen')) {
+                                    loadRules('pending');
+                                } else {
+                                    loadRules(currentStatus);
+                                }
+                            }, 2000);
+                        }
+                    });
+            }, 1000);
+        }
+
+        loadRules('pending');
+    </script>
+</body>
+
+</html>

@@ -44,8 +44,18 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     filename TEXT UNIQUE NOT NULL COLLATE NOCASE,
                     tags TEXT,
+                    tags_clean TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS consolidation_rules (
+                    original_tag TEXT PRIMARY KEY,
+                    replacement_tags TEXT,
+                    status TEXT DEFAULT 'pending', -- pending, approved, rejected
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             
@@ -59,6 +69,13 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_tags 
                 ON image_tags(tags)
             """)
+
+            # Check for tags_clean column (migration)
+            cursor = conn.execute("PRAGMA table_info(image_tags)")
+            columns = [info['name'] for info in cursor.fetchall()]
+            if 'tags_clean' not in columns:
+                print("Migrating database: Adding tags_clean column...")
+                conn.execute("ALTER TABLE image_tags ADD COLUMN tags_clean TEXT")
     
     def get_tagged_filenames(self) -> set:
         """Get set of all tagged filenames (case-insensitive)"""
@@ -256,3 +273,61 @@ class Database:
         filtered.sort(key=lambda x: x[1], reverse=True)
         
         return filtered[:limit]
+
+    # --- Consolidation Rules ---
+    
+    def save_consolidation_rule(self, original: str, replacements: List[str], status: str = 'pending'):
+        """Save a tag consolidation rule"""
+        import json
+        with self.get_connection() as conn:
+            conn.execute("""
+                INSERT INTO consolidation_rules (original_tag, replacement_tags, status, created_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(original_tag) DO UPDATE SET
+                    replacement_tags = excluded.replacement_tags,
+                    status = excluded.status
+            """, (original, json.dumps(replacements), status))
+
+    def get_consolidation_rules(self, status: str = None) -> List[Dict]:
+        """Get all consolidation rules, optionally filtered by status"""
+        query = "SELECT * FROM consolidation_rules"
+        params = []
+        if status:
+            query += " WHERE status = ?"
+            params.append(status)
+            
+        with self.get_connection() as conn:
+            cursor = conn.execute(query, params)
+            import json
+            results = []
+            for row in cursor:
+                results.append({
+                    'original_tag': row['original_tag'],
+                    'replacement_tags': json.loads(row['replacement_tags']),
+                    'status': row['status'],
+                    'created_at': row['created_at']
+                })
+            return results
+
+    def save_clean_tags_batch(self, items: List[Dict[str, str]]):
+        """
+        Batch save CLEAN tags for multiple files
+        items: [{"filename": "...", "tags_clean": "..."}, ...]
+        """
+        with self.get_connection() as conn:
+            for item in items:
+                conn.execute("""
+                    UPDATE image_tags 
+                    SET tags_clean = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE filename = ?
+                """, (item['tags_clean'], item['filename']))
+                
+    def get_clean_tags(self, filename: str) -> Optional[str]:
+        """Get clean tags for a specific file"""
+        with self.get_connection() as conn:
+            cursor = conn.execute(
+                "SELECT tags_clean FROM image_tags WHERE filename = ? COLLATE NOCASE",
+                (filename,)
+            )
+            row = cursor.fetchone()
+            return row['tags_clean'] if row else None
