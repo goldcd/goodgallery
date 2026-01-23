@@ -883,6 +883,7 @@
                 <div class="progress-fill" id="progress-fill"></div>
             </div>
             <p class="progress-text" id="progress-text">0 / 0 images tagged</p>
+            <p class="progress-text" id="time-remaining" style="font-size: 12px; color: #666; margin-top: 5px; min-height: 18px;"></p>
             <button class="cancel-button" id="cancel-btn" onclick="cancelTagging()">Cancel</button>
         </div>
     </div>
@@ -924,6 +925,7 @@
             // Show overlay
             document.getElementById('progress-overlay').classList.remove('hidden');
             document.getElementById('progress-status').textContent = 'Starting tagging process...';
+            document.getElementById('time-remaining').textContent = '';
 
             try {
                 // Start tagging
@@ -960,6 +962,16 @@
                         document.getElementById('progress-fill').textContent = percent + '%';
                         document.getElementById('progress-text').textContent = `${data.current} / ${data.total} images tagged`;
                         document.getElementById('progress-status').textContent = data.status || 'Processing...';
+                        
+                        // Update time estimate
+                        if (data.estimate_seconds !== undefined) {
+                            const minutes = Math.floor(data.estimate_seconds / 60);
+                            const seconds = data.estimate_seconds % 60;
+                            const timeStr = `${minutes}m ${seconds}s`;
+                            document.getElementById('time-remaining').textContent = `Est. remaining: ${timeStr}`;
+                        } else {
+                            document.getElementById('time-remaining').textContent = 'Calculating time...';
+                        }
                     } else {
                         // Tagging complete
                         clearInterval(taggingPollInterval);
@@ -967,11 +979,14 @@
                         if (data.error) {
                             document.getElementById('progress-status').textContent = 'Error: ' + data.error;
                             document.getElementById('progress-status').style.color = '#dc3545';
+                            document.getElementById('time-remaining').textContent = '';
                         } else {
                             document.getElementById('progress-fill').style.width = '100%';
                             document.getElementById('progress-fill').textContent = '100%';
+                            document.getElementById('progress-text').textContent = `${data.total} / ${data.total} images tagged`;
                             document.getElementById('progress-status').textContent = '✅ Tagging complete!';
                             document.getElementById('progress-status').style.color = '#28a745';
+                            document.getElementById('time-remaining').textContent = '';
 
                             // Reload tag list for autocomplete
                             if (typeof loadTags === 'function') {

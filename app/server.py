@@ -571,7 +571,8 @@ tagging_state = {
     'total': 0,
     'status': '',
     'error': None,
-    'cancel_requested': False
+    'cancel_requested': False,
+    'start_time': None
 }
 tagging_lock = threading.Lock()
 tagging_thread = None
@@ -581,6 +582,8 @@ tagging_thread = None
 def api_start_tagging():
     """Start manual tagging process in background"""
     global tagging_thread
+    
+    import time
     
     with tagging_lock:
         if tagging_state['running']:
@@ -593,6 +596,7 @@ def api_start_tagging():
         tagging_state['status'] = 'Starting...'
         tagging_state['error'] = None
         tagging_state['cancel_requested'] = False
+        tagging_state['start_time'] = time.time()
     
     # Start tagging in background
     tagging_thread = threading.Thread(target=manual_tagging_worker, daemon=True)
@@ -604,14 +608,26 @@ def api_start_tagging():
 @app.route('/api/tagging_status')
 def api_tagging_status():
     """Get current tagging progress"""
+    import time
+    
     with tagging_lock:
-        return jsonify({
+        response = {
             'running': tagging_state['running'],
             'current': tagging_state['current'],
             'total': tagging_state['total'],
             'status': tagging_state['status'],
             'error': tagging_state['error']
-        })
+        }
+        
+        # Calculate time estimate
+        if tagging_state['running'] and tagging_state['current'] > 0 and tagging_state['start_time']:
+            elapsed = time.time() - tagging_state['start_time']
+            rate = elapsed / tagging_state['current'] # seconds per image
+            remaining_images = tagging_state['total'] - tagging_state['current']
+            if remaining_images > 0:
+                response['estimate_seconds'] = int(remaining_images * rate)
+                
+        return jsonify(response)
 
 
 @app.route('/api/cancel_tagging', methods=['POST'])

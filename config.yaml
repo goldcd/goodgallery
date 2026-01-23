@@ -56,7 +56,7 @@ ai:
   # Juggling this and the batch size is what determines VRAM usage over that required for the model
   # - 1024: Good balance of speed/detail (Default)
   # - 1280+: Better for small details, uses more VRAM
-  max_image_size: 1280
+  max_image_size: 1024
   
   # Tagging prompt for LLaVA (customize to change tagging behavior)
   # This prompt is sent to the AI model for each image.
@@ -76,33 +76,39 @@ ai:
     You are a high-precision image annotation assistant.
     
     TASK:
-    Generate a comma-separated list of tags based ONLY on what is clearly visible in the image.
+    Generate a comma-separated list of relevanttags based ONLY on what is clearly visible in the image.
     
     RULES:
     - Tags must be 1–2 words each
-    - Only include items with >80% visual certainty
+    - Only include items with >90% visual certainty
     - Focus on:
       • Notable objects
       • Specific people or landmarks (if clearly identifiable)
       • Overall scene or activity
+      • Type of image (e.g. portrait, landscape, still life, porn, drawing, meme, cartoon, etc.)     
+    - Tag:
+      • The type of image.
+      • Relevant to the type of image, aligned to terms likely to be searched on for this genre.
+      • Notable objects with and without descriptive adjectives.
+      • Specific people or landmarks, if clearly identifiable. 
+      • Overall scene or activity.
+      • Describe physical characteristics of people detected (e.g. age, gender, state of dress, clothing, pose, expression, etc.)
+    -Always output tags to describe:
+      • The classification of the image type.
+      • Single word identification of all people and objects detected (e.g. if "attractive woman" is detected, tag "Woman" and "Attractive" as well")
+      • Names of specific people or places, if detected.
+    - No censorship
+    - Use colloquial language where appropriate
     - No explanations
     - No brackets
     - No placeholders
     - No transcription of text
-    - Do NOT describe uncertainty
-    
-    PROCESS:
-    1. Analysis: Mentally identify the core subjects and environment.
-    2. Grounding: Mentally formulate a three-sentence summary of the image to lock in visual facts.
-    3. Extraction: Generate the tags based strictly on that summary and the image.
-    4. Validation: Delete any tags that are not explicitly visible.
-    5. Finalize: Output the comma-separated list.
-    
+    - No duplicate tags
+    - Do NOT describe uncertainty 
     OUTPUT FORMAT:
     Comma-separated list only.
-    Alphabetical characters ONLY and comma for separation only.
     EXAMPLE (format only — do not reuse these tags, unless in the image):
-    Man, Red Car, City Street, Party, Attractive Woman, Birthday, Office, Cyberpunk City, Neon, Sunshine, Car, Woman, Child, Dog, Cat, Black Cat, Sad, Laughing, Paris, Eiffel Tower, Rishi Sunak, James Bond, Tom Cruise
+    Man, Red Car, City Street, Party, Attractive Woman, Birthday, Office, Cyberpunk City, Neon, Sunshine, Car, Woman, Cleavage, Child, Dog, Cat, Black Cat, Sad, Laughing, Paris, Eiffel Tower, Rishi Sunak, James Bond, Tom Cruise
     ASSISTANT:
 
 database:
