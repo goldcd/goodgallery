@@ -40,7 +40,19 @@ class BootstrapManager:
             except ImportError:
                 # Only strictly required if using Qwen, but good to have consistency
                 if config.get('ai', {}).get('model', '').startswith('prithivMLmods/'):
-                    raise ImportError("qwen_vl_utils missing")
+                    try:
+                        import pyxet
+                    except ImportError:
+                        try:
+                             # Newer versions might expose it differently, or just rely on the installed package
+                             # failing that, we check for the package presence logic in pip later, but checking import is better
+                             import hf_xet
+                        except ImportError:
+                             print("⚠️  Xet storage support missing (required for Qwen)")
+                             raise ImportError("hf_xet missing")
+                    
+                    if 'qwen_vl_utils' not in sys.modules:
+                         import qwen_vl_utils
             
             deps_installed = True
         except ImportError:

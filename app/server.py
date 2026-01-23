@@ -98,7 +98,7 @@ def get_ai_tagger():
             use_quantization=config['ai']['use_quantization'],
             batch_size=config['ai']['batch_size'],
             tagging_prompt=prompt_from_config,
-            cache_dir=models_dir
+            cache_dir=os.path.join(models_dir, config['ai']['model'].replace('/', '_'))
         )
         # Debug: Verify prompt source
         if prompt_from_config:
@@ -681,7 +681,7 @@ def manual_tagging_worker():
             'model': config['ai'].get('model', 'llava-hf/llava-1.5-7b-hf'),
             'use_quantization': config['ai'].get('use_quantization', True),
             'tagging_prompt': config['ai'].get('tagging_prompt'),
-            'cache_dir': os.path.join(ROOT_DIR, 'models')
+            'cache_dir': os.path.join(ROOT_DIR, 'models', config['ai'].get('model', '').replace('/', '_'))
         }
         
         # Only pass batch_size if explicitly configured
