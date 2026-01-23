@@ -33,7 +33,7 @@ def main():
     all_image_paths = config['image_paths']
     output_file = config['output_file']
     model_config = config['model_config']
-    batch_size = model_config.get('batch_size', 15)
+    batch_size = model_config.get('batch_size', 1)
     progress_file = config.get('progress_file')  # NEW: progress file for status updates
     
     total_images = len(all_image_paths)
@@ -54,7 +54,8 @@ def main():
         use_quantization=model_config.get('use_quantization', True),
         batch_size=batch_size,
         tagging_prompt=model_config.get('tagging_prompt'),
-        cache_dir=model_config.get('cache_dir')
+        cache_dir=model_config.get('cache_dir'),
+        max_image_size=model_config.get('max_image_size')
     )
     
     # Load model ONCE (GPU memory allocated here)
@@ -81,14 +82,23 @@ def main():
         # Flush stdout to ensure it hits the log file immediately
         sys.stdout.flush()
         
-        results = tagger.tag_batch(batch_paths)
-        all_results.extend(results)
+        try:
+            results = tagger.tag_batch(batch_paths)
+            all_results.extend(results)
+        except Exception as e:
+            print(f"[WORKER] Error processing batch {batch_num}: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.stdout.flush()
+            continue
         
         # Write this batch's results immediately
         try:
             with open(output_file, 'a', encoding='utf-8') as f:
                 # Write as a JSON line per batch
                 f.write(json.dumps(results) + '\n')
+                f.flush()
+                os.fsync(f.fileno())
         except Exception as e:
             print(f"[WORKER] Error writing batch results: {e}")
             sys.stdout.flush()

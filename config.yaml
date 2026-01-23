@@ -43,6 +43,16 @@ ai:
   # Enable 4-bit quantization (fits in ~6GB VRAM)
   use_quantization: true
   
+  # Batch size for tagging
+  # - 1: Safe, Stable, Low VRAM (Recommended for Qwen)
+  # - 2+: Faster but uses significantly more VRAM. May crash if images are large.
+  batch_size: 15
+  
+  # Max image dimension (in pixels) for AI analysis
+  # - 1024: Good balance of speed/detail (Default)
+  # - 1280+: Better for small details, uses more VRAM
+  max_image_size: 1280
+  
   # Tagging prompt for LLaVA (customize to change tagging behavior)
   # This prompt is sent to the AI model for each image.
   # You can modify this to change what the AI focuses on when analyzing images.

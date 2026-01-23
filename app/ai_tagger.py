@@ -21,11 +21,12 @@ def get_device():
     return "cpu"
 
 class AITagger:
-    def __init__(self, model_id: str = "llava-hf/llava-1.5-7b-hf", use_quantization: bool = True, batch_size: int = 15, tagging_prompt: str = None, cache_dir: str = None):
+    def __init__(self, model_id: str = "llava-hf/llava-1.5-7b-hf", use_quantization: bool = True, batch_size: int = 1, tagging_prompt: str = None, cache_dir: str = None, max_image_size: int = 1024):
         self.model_id = model_id
         self.use_quantization = use_quantization
         self.batch_size = batch_size
         self.cache_dir = cache_dir
+        self.max_image_size = max_image_size
         self.device = get_device()
         
         # Disable quantization on non-CUDA devices (BitsAndBytes is CUDA-only)
@@ -74,7 +75,8 @@ class AITagger:
                     quantization_config = BitsAndBytesConfig(
                         load_in_4bit=True,
                         bnb_4bit_compute_dtype=torch.float16,
-                        bnb_4bit_quant_type="nf4"
+                        bnb_4bit_quant_type="nf4",
+                        bnb_4bit_use_double_quant=True
                     )
                 except ImportError:
                     print("Warning: bitsandbytes not installed, falling back to float16")
@@ -147,7 +149,17 @@ class AITagger:
     def _load_image_worker(self, path: str):
         """Reference: tagger_client_v2.py:79-84"""
         try:
-            return Image.open(path).convert("RGB"), path
+            img = Image.open(path).convert("RGB")
+            
+            # RESIZE LOGIC for Qwen Memory Safety
+            # Qwen2-VL creates tokens based on resolution. 
+            # Native 4K images = thousands of tokens = OOM.
+            # 1024px is plenty for tagging and keeps VRAM < 8GB.
+            max_dim = self.max_image_size
+            if max_dim and max(img.size) > max_dim:
+                img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+                
+            return img, path
         except Exception as e:
             print(f"Error loading {path}: {e}")
             return None, path
@@ -210,27 +222,34 @@ class AITagger:
                 
                 image_inputs, video_inputs = self.process_vision_info(messages)
                 
-                inputs = self.processor(
-                    text=texts,
-                    images=image_inputs,
-                    videos=video_inputs,
-                    padding=True,
-                    return_tensors="pt",
-                ).to(self.device)
-                
-                # Generate
-                generated_ids = self.model.generate(**inputs, max_new_tokens=128)
-                
-                # Trim inputs from outputs
-                generated_ids_trimmed = [
-                    out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
-                ]
-                
-                outputs = self.processor.batch_decode(
-                    generated_ids_trimmed, 
-                    skip_special_tokens=True, 
-                    clean_up_tokenization_spaces=False
-                )
+                # INFERENCE WITH NO GRADIENT TRACKING (Crucial for VRAM)
+                with torch.no_grad():
+                    inputs = self.processor(
+                        text=texts,
+                        images=image_inputs,
+                        videos=video_inputs,
+                        padding=True,
+                        return_tensors="pt",
+                    ).to(self.device)
+                    
+                    # Generate
+                    generated_ids = self.model.generate(**inputs, max_new_tokens=128)
+                    
+                    # Trim inputs from outputs
+                    generated_ids_trimmed = [
+                        out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+                    ]
+                    
+                    outputs = self.processor.batch_decode(
+                        generated_ids_trimmed, 
+                        skip_special_tokens=True, 
+                        clean_up_tokenization_spaces=False
+                    )
+
+                # Aggressive Cleanup
+                del inputs, generated_ids, generated_ids_trimmed, image_inputs, video_inputs
+                if self.device == "cuda":
+                    torch.cuda.empty_cache()
             
             # --- LLaVA LOGIC (Legacy) ---
             else:

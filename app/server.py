@@ -649,6 +649,10 @@ def manual_tagging_worker():
     import subprocess
     
     try:
+        # Reload config to ensure we have latest settings from disk
+        global config
+        config = load_config()
+
         # Get untagged files
         all_files = gallery.get_file_index()
         tagged = db.get_tagged_filenames()
@@ -676,10 +680,17 @@ def manual_tagging_worker():
         model_config = {
             'model': config['ai'].get('model', 'llava-hf/llava-1.5-7b-hf'),
             'use_quantization': config['ai'].get('use_quantization', True),
-            'batch_size': config['ai'].get('batch_size', 15),
             'tagging_prompt': config['ai'].get('tagging_prompt'),
             'cache_dir': os.path.join(ROOT_DIR, 'models')
         }
+        
+        # Only pass batch_size if explicitly configured
+        if 'batch_size' in config['ai']:
+            model_config['batch_size'] = config['ai']['batch_size']
+            
+        # Pass max_image_size if configured
+        if 'max_image_size' in config['ai']:
+            model_config['max_image_size'] = config['ai']['max_image_size']
         
         # Create temporary files for worker communication
         config_fd, config_file = tempfile.mkstemp(suffix='.json', text=True)
