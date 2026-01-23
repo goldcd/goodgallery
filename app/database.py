@@ -125,12 +125,13 @@ class Database:
         
         with self.get_connection() as conn:
             conn.execute("""
-                INSERT INTO image_tags (filename, tags, updated_at)
-                VALUES (?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO image_tags (filename, tags, tags_clean, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(filename) DO UPDATE SET
                     tags = excluded.tags,
+                    tags_clean = excluded.tags_clean,
                     updated_at = CURRENT_TIMESTAMP
-            """, (filename, clean_tags))
+            """, (filename, clean_tags, clean_tags))
     
     def save_tags_batch(self, items: List[Dict[str, str]]):
         """
@@ -150,12 +151,13 @@ class Database:
                 clean_tags = self._clean_tags(tags)
                 
                 conn.execute("""
-                    INSERT INTO image_tags (filename, tags, updated_at)
-                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                    INSERT INTO image_tags (filename, tags, tags_clean, updated_at)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
                     ON CONFLICT(filename) DO UPDATE SET
                         tags = excluded.tags,
+                        tags_clean = excluded.tags_clean,
                         updated_at = CURRENT_TIMESTAMP
-                """, (filename, clean_tags))
+                """, (filename, clean_tags, clean_tags))
     
     def delete_tags(self, filename: str):
         """Delete tags entry for a file"""
@@ -165,7 +167,7 @@ class Database:
                 (filename,)
             )
     
-    def search_by_tags(self, search_terms: List[Tuple[str, bool]]) -> List[str]:
+    def search_by_tags(self, search_terms: List[Tuple[str, bool]], column: str = 'tags') -> List[str]:
         """
         Search for files by tags using boolean logic with whole-word matching.
         
@@ -176,6 +178,8 @@ class Database:
         Example: [("beach", False), ("sunset", False), ("people", True)]
         = has beach AND sunset AND NOT people
         
+        column: 'tags' or 'tags_clean'
+        
         Returns: list of matching filenames
         """
         if not search_terms:
@@ -184,6 +188,10 @@ class Database:
         # Build WHERE clause with REGEXP for each term
         conditions = []
         params = []
+        
+        # Validate column name to prevent injection
+        if column not in ['tags', 'tags_clean']:
+            raise ValueError("Invalid column name")
         
         for term, is_negative in search_terms:
             # Match complete tags in comma-separated list
@@ -200,9 +208,9 @@ class Database:
             pattern = fr"(?:^|,)\s*(?:[\*\-\s]*){escaped_term}(?:[\*\-\s]*)(?:,|$)"
             
             if is_negative:
-                conditions.append("tags NOT REGEXP ?")
+                conditions.append(f"{column} NOT REGEXP ?")
             else:
-                conditions.append("tags REGEXP ?")
+                conditions.append(f"{column} REGEXP ?")
             
             params.append(pattern)
         
@@ -241,32 +249,45 @@ class Database:
                 'untagged': total - tagged
             }
     
-    def get_all_tags(self) -> Dict[str, int]:
+    def get_all_tags(self, column: str = 'tags') -> Dict[str, int]:
         """
         Get all unique tags with their frequencies
+        column: 'tags' or 'tags_clean'
         Returns: {"tag": count, ...}
         """
+        # Validate column name
+        if column not in ['tags', 'tags_clean']:
+             raise ValueError("Invalid column name")
+
         tag_counts = {}
         
         with self.get_connection() as conn:
-            cursor = conn.execute("SELECT tags FROM image_tags WHERE tags IS NOT NULL")
+            # If requesting tags_clean, fallback to tags if null
+            # This ensures we get a complete list for autocomplete even if some images aren't processed
+            if column == 'tags_clean':
+                query = "SELECT COALESCE(tags_clean, tags) as val FROM image_tags WHERE tags IS NOT NULL"
+            else:
+                query = f"SELECT {column} as val FROM image_tags WHERE {column} IS NOT NULL"
+                
+            cursor = conn.execute(query)
             
             for row in cursor:
-                if row['tags']:
+                if row['val']:
                     # Split by comma and count each tag
-                    tags = [t.strip().lower() for t in row['tags'].split(',')]
+                    tags = [t.strip().lower() for t in row['val'].split(',')]
                     for tag in tags:
                         if tag:
                             tag_counts[tag] = tag_counts.get(tag, 0) + 1
         
         return tag_counts
     
-    def get_top_tags(self, limit: int = 50, min_count: int = 2) -> List[Tuple[str, int]]:
+    def get_top_tags(self, limit: int = 50, min_count: int = 2, column: str = 'tags') -> List[Tuple[str, int]]:
         """
         Get most common tags
+        column: 'tags' or 'tags_clean'
         Returns: [(tag, count), ...] sorted by frequency
         """
-        tag_counts = self.get_all_tags()
+        tag_counts = self.get_all_tags(column=column)
         
         # Filter by minimum count and sort
         filtered = [(tag, count) for tag, count in tag_counts.items() if count >= min_count]
@@ -331,3 +352,15 @@ class Database:
             )
             row = cursor.fetchone()
             return row['tags_clean'] if row else None
+
+    def backfill_clean_tags(self):
+        """
+        Ensure all records have tags_clean populated.
+        Sets tags_clean = tags where it is NULL.
+        """
+        with self.get_connection() as conn:
+            conn.execute("""
+                UPDATE image_tags 
+                SET tags_clean = tags 
+                WHERE tags_clean IS NULL AND tags IS NOT NULL
+            """)

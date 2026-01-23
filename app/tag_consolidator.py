@@ -248,3 +248,59 @@ class TagConsolidator:
                 updated_count += len(batch)
                 
         return updated_count
+        
+    def apply_rules_to_files(self, filenames: List[str]) -> int:
+        """
+        Apply rules to a specific list of files (e.g. after ingest).
+        """
+        if not filenames:
+            return 0
+            
+        # 1. Get all APPROVED rules
+        rules = self.db.get_consolidation_rules(status='approved')
+        rule_map = {r['original_tag']: r['replacement_tags'] for r in rules}
+        
+        # Even if no rules, we might want to ensure clean tags = raw tags?
+        # But DB save logic now handles that.
+        if not rule_map:
+            return 0
+            
+        updated_count = 0
+        batch = []
+        
+        for filename in filenames:
+            raw_tags_str = self.db.get_tags(filename)
+            
+            if not raw_tags_str:
+                continue
+                
+            raw_tags = [t.strip() for t in raw_tags_str.split(',')]
+            clean_set = set()
+            
+            for tag in raw_tags:
+                tag_lower = tag.lower()
+                if tag_lower in rule_map:
+                    # Apply rule
+                    clean_set.update(rule_map[tag_lower])
+                else:
+                    # Keep original
+                    clean_set.add(tag_lower)
+            
+            # Join sorted
+            # Use case-insensitive sort for display niceness
+            clean_list = sorted(list(clean_set), key=str.lower)
+            final_clean_tags = ', '.join(clean_list)
+            
+            # Check if different from current to save DB writes?
+            # DB update is cheap enough for small batches.
+            
+            batch.append({
+                'filename': filename,
+                'tags_clean': final_clean_tags
+            })
+            
+        if batch:
+            self.db.save_clean_tags_batch(batch)
+            updated_count = len(batch)
+            
+        return updated_count

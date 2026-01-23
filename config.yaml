@@ -83,8 +83,10 @@ ai:
     2. **Identify Redundancies**: Map synonyms, typos, and plural forms to the most common/standard term.
        - Example: `males (2)` -> `['man']` (if `man` exists and is frequent)
        - Example: `doggy (5)` -> `['dog']`
-    3. **Generalize**: If a specific tag implies a general category, add it. KEEP the original specific tag found. Also include intermediate phrases.
-       - Example: `black leather jacket (10)` -> `['black leather jacket', 'leather jacket', 'black jacket', 'jacket', 'leather', 'black']`
+    3. **Generalize (Strict)**: Only add a general category if it is a *direct* parent taxonomy. Do NOT add vague concepts like "activity", "object", "concept", "thing".
+       - Example: `black leather jacket` -> `['black leather jacket', 'leather jacket', 'jacket']` (Good)
+       - Example: `smoking` -> `['activity']` (BAD - too vague)
+       - Example: `cat` -> `['animal']` (Good)
     4. **Keep Good Tags**: If a tag is standard and correct (e.g. `sunset`, `beach`), map it to itself or just omit it if you make no changes.
        - Ideally, if no change needed, valid output is `tag -> [tag]`
     5. **Prioritize usage**: If `bike (50)` and `bicycle (5)` exist, map `bicycle` -> `['bike']`.

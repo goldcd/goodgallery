@@ -397,6 +397,7 @@
             } else if (currentStatus === 'approved') {
                 return `
                     <button class="btn-primary btn-sm" onclick="updateRule('${rule.original_tag}', 'approved')">Update</button>
+                    <button class="btn-secondary btn-sm" onclick="updateRule('${rule.original_tag}', 'pending')">To Pending</button>
                     <button class="btn-danger btn-sm" onclick="updateRule('${rule.original_tag}', 'rejected')">Reject</button>
                 `;
             } else {

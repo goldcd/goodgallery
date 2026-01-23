@@ -71,6 +71,11 @@ def run_validation():
     print("Startup: Validating thumbnails in background...")
     thumbs.validate_cache()
     print("Startup: Thumbnail validation complete.")
+    
+    # Backfill clean tags if missing
+    print("Startup: Checking for missing clean tags...")
+    db.backfill_clean_tags()
+    print("Startup: Clean tags synchronized.")
 
 import threading
 validation_thread = threading.Thread(target=run_validation, daemon=True)
@@ -142,8 +147,15 @@ def index():
             # Let's check `search_by_tags` implementation.
             # It hardcodes 'tags'.
             
-            # WORKAROUND: For now, search matches RAW tags, but we display CLEAN tags.
-            # This is safer to avoid breaking existing search logic.
+            # Search logic
+            if view_mode == 'clean':
+                # Search clean tags column
+                # This requires DB update to support column selection or a new method
+                # Adding support to search_by_tags is cleanest
+                matching_filenames = db.search_by_tags(gallery.parse_tag_search(search_query), column='tags_clean')
+            else:
+                # Search raw tags
+                matching_filenames = db.search_by_tags(gallery.parse_tag_search(search_query), column='tags')
             # If the user searches "running", they might miss "jogging man" if we only search clean tags 
             # AND the clean tags haven't been applied yet.
             # If applied, "jogging man" becomes "running", so raw search for "running" MIGHT miss it if it was only in clean.
@@ -351,6 +363,11 @@ def api_save_tags():
     # Save to database
     db.save_tags_batch(items)
     
+    # Auto-apply consolidation rules to these files
+    filenames = [item['filename'] for item in items if 'filename' in item]
+    if filenames:
+        consolidator.apply_rules_to_files(filenames)
+    
     return jsonify({
         'status': 'ok',
         'processed': len(items)
@@ -358,8 +375,12 @@ def api_save_tags():
 
 
 @app.route('/api/tags')
+@app.route('/api/tags')
 def api_tags():
     """Get all tags with frequencies"""
+    view_mode = request.args.get('view', 'raw')
+    column = 'tags_clean' if view_mode == 'clean' else 'tags'
+    
     # Get limits from config or defaults
     config_limits = config['gallery'].get('tag_limits', {})
     default_limit = config_limits.get('dropdown', 1000)
@@ -368,7 +389,7 @@ def api_tags():
     min_count = int(request.args.get('min_count', default_min))
     limit = int(request.args.get('limit', default_limit))
     
-    top_tags = db.get_top_tags(limit=limit, min_count=min_count)
+    top_tags = db.get_top_tags(limit=limit, min_count=min_count, column=column)
     
     # Return as simple list of tag names
     return jsonify([tag for tag, count in top_tags])
@@ -382,9 +403,12 @@ def api_file_count():
 
 
 @app.route('/api/related_tags')
+@app.route('/api/related_tags')
 def api_related_tags():
     """Get related tags for a search query"""
     search_query = request.args.get('q', '').strip()
+    view_mode = request.args.get('view', 'raw')
+    column = 'tags_clean' if view_mode == 'clean' else 'tags'
     
     if not search_query:
         # Return popular tags
@@ -393,17 +417,26 @@ def api_related_tags():
         browse_limit = config_limits.get('browse', 100)
         min_count = config_limits.get('min_count', 1)
         
-        top_tags = db.get_top_tags(limit=browse_limit, min_count=min_count)
+        top_tags = db.get_top_tags(limit=browse_limit, min_count=min_count, column=column)
         return jsonify({tag: count for tag, count in top_tags})
     
     # Parse search and get matching files
     search_terms = gallery.parse_tag_search(search_query)
-    matching_filenames = db.search_by_tags(search_terms)
+    matching_filenames = db.search_by_tags(search_terms, column=column)
     
     # Count tags in matching images
     tag_counts = {}
     for filename in matching_filenames:
-        tags_str = db.get_tags(filename)
+        if view_mode == 'clean':
+            tags_str = db.get_clean_tags(filename)
+            # Fallback handled by db.get_clean_tags? No, db.get_clean_tags returns value or None.
+            # But we backfilled, so it should be fine.
+            # However, for robustness:
+            if not tags_str:
+                tags_str = db.get_tags(filename)
+        else:
+            tags_str = db.get_tags(filename)
+            
         if tags_str:
             tags = [t.strip().lower() for t in tags_str.split(',')]
             for tag in tags:
@@ -442,6 +475,11 @@ def api_tag_batch():
         
         # Save to database
         db.save_tags_batch(results)
+        
+        # Auto-apply consolidation rules
+        filenames = [os.path.basename(p) for p in image_paths]
+        if filenames:
+            consolidator.apply_rules_to_files(filenames)
         
         return jsonify({
             'status': 'ok',
@@ -598,7 +636,9 @@ def api_export():
 
 # --- CONSOLIDATION ROUTES ---
 
+# --- CONSOLIDATION ROUTES ---
 from app.tag_consolidator import TagConsolidator
+consolidator = TagConsolidator(db, None) # No AI needed for applying rules
 
 @app.route('/consolidate')
 def consolidate_view():

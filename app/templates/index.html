@@ -1063,17 +1063,34 @@
 
         // Load tags from API
         function loadTags() {
-            if (tagsLoaded) return;
+            // Check view mode if element exists
+            const viewSelect = document.getElementById('viewMode');
+            const viewMode = viewSelect ? viewSelect.value : 'raw';
 
-            fetch('/api/tags')
+            // Force reload if we are switching views (logic handled by caller usually, but safe here)
+            const url = `/api/tags?view=${viewMode}`;
+
+            fetch(url)
                 .then(r => r.json())
                 .then(tags => {
                     allTags = tags;
                     tagsLoaded = true;
-                    console.log('Loaded ' + tags.length + ' tags');
+                    console.log(`Loaded ${tags.length} tags (view: ${viewMode})`);
                 })
                 .catch(err => console.error('Error loading tags:', err));
         }
+
+        // Add listener to reload tags when view changes
+        document.addEventListener('DOMContentLoaded', () => {
+            const viewSelect = document.getElementById('viewMode');
+            if (viewSelect) {
+                viewSelect.addEventListener('change', () => {
+                    // Reload tags for autocomplete
+                    tagsLoaded = false;
+                    loadTags();
+                });
+            }
+        });
 
         // Show autocomplete suggestions
         function showAutocomplete() {
@@ -1312,11 +1329,12 @@
         // Load tags from current view (for browsing)
         function loadCurrentViewTags() {
             const query = searchInput.value.trim() || '';
+            const viewSelect = document.getElementById('viewMode');
+            const viewMode = viewSelect ? viewSelect.value : 'raw';
 
             // ALWAYS use related_tags API (returns {tag: count}) to ensure we get counts
-            // ALWAYS use related_tags API (returns {tag: count}) to ensure we get counts
             // server.py handles empty query by returning top tags
-            const url = `/api/related_tags?q=${encodeURIComponent(query)}`;
+            const url = `/api/related_tags?q=${encodeURIComponent(query)}&view=${viewMode}`;
 
             fetch(url)
                 .then(r => r.json())
