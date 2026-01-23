@@ -31,27 +31,53 @@ class TagConsolidator:
         all_tags_map = self.db.get_all_tags()
         
         # 2. Filter rules
-        existing_rules = {r['original_tag'] for r in self.db.get_consolidation_rules()}
+        # We RE-EVALUATE 'pending' tags to ensure they get the benefit of new context (e.g. new synonyms)
+        # We EXCLUDE 'approved' and 'rejected' tags from being *targets of change*, 
+        # but we should use them as *context* (preferred vocabulary).
+        
+        rules_list = self.db.get_consolidation_rules()
+        completed_rules = {r['original_tag'] for r in rules_list if r['status'] in ['approved', 'rejected']}
+        
+        # Build "Preferred Vocabulary" from Approved rules (replacement tags)
+        # This helps the AI map new tags to existing established standards.
+        preferred_vocab = set()
+        for r in rules_list:
+            if r['status'] == 'approved':
+                # Add the REPLACEMENT tags (the clean versions)
+                for t in r['replacement_tags']:
+                    preferred_vocab.add(t)
+        
+        # Also add high-frequency raw tags that are NOT in rules yet? 
+        # Maybe not, let's stick to explicitly approved ones to keep context clear.
         
         # Prepare candidates tuple: (tag, count)
-        # Filter noise: Must be > 2 chars, not digit, not existing
         candidates = []
         for tag, count in all_tags_map.items():
-            if tag not in existing_rules and len(tag) > 2 and not tag.isdigit():
+            # Skip if already decided (Approved/Rejected)
+            if tag in completed_rules:
+                continue
+                
+            # Filter noise
+            if len(tag) > 2 and not tag.isdigit():
                 candidates.append((tag, count))
                 
-        # Sort by frequency desc (helps AI to see important ones first)
+        # Sort by frequency desc
         candidates.sort(key=lambda x: x[1], reverse=True)
         
         if not candidates:
             if progress_callback:
-                msg = f"No new tags to analyze. (Total unique: {len(all_tags_map)})"
+                msg = f"No new or pending tags to analyze. (Total unique: {len(all_tags_map)})"
                 progress_callback(0, 0, msg)
                 print(f"DEBUG: {msg}")
             return 0
             
         total_candidates = len(candidates)
-        print(f"DEBUG: Found {total_candidates} candidates. Processing in batches of {batch_size}...")
+        print(f"DEBUG: Found {total_candidates} candidates (New+Pending). Processing in batches of {batch_size}...")
+        
+        # Convert preferred vocab to list for prompt
+        # Limit to top 500 to save tokens if necessary, or pass all if manageable.
+        # For now, just pass them all (text model context window is usually large).
+        vocab_list = sorted(list(preferred_vocab))
         
         if progress_callback:
             progress_callback(0, total_candidates, f"Found {total_candidates} tags to analyze")
@@ -68,12 +94,13 @@ class TagConsolidator:
                 progress_callback(i, total_candidates, f"Analyzing batch {current_batch_num} ({len(batch)} tags)...")
             
             try:
-                mappings = self._analyze_tags_with_ai(batch, prompt_template)
+                mappings = self._analyze_tags_with_ai(batch, vocab_list, prompt_template)
                 
                 # Save results
                 if mappings:
                     print(f"DEBUG: AI returned {len(mappings)} mappings for batch {current_batch_num}")
                     for original, replacements in mappings.items():
+                        # UPSERT rule (might update existing pending one)
                         self.db.save_consolidation_rule(original, replacements, status='pending')
                         proposals_count += 1
                 else:
@@ -85,45 +112,43 @@ class TagConsolidator:
                 
         return proposals_count
 
-    def _analyze_tags_with_ai(self, tags_with_counts: List[tuple], prompt_template=None) -> Dict[str, List[str]]:
+    def _analyze_tags_with_ai(self, tags_with_counts: List[tuple], preferred_vocab: List[str], prompt_template=None) -> Dict[str, List[str]]:
         """
         Ask AI to consolidate a list of tags.
-        Input: [(tag, count), (tag, count)...]
-        Returns: { 'original': ['replacement1', 'replacement2'] }
+        Input: [(tag, count)...]
+        preferred_vocab: List of tags that are already approved (AI should map to these if possible)
         """
         
-        # Construct list string: "tag (count)"
-        # This gives context: "man (1000)" vs "males (2)" -> AI prefers "man"
         tags_list_str = "\n".join([f"- {t} ({c})" for t, c in tags_with_counts])
+        vocab_str = ", ".join(preferred_vocab) if preferred_vocab else "(None yet)"
         
         if prompt_template:
             # Use custom prompt from config
-            # Replace placeholder
             prompt = prompt_template.replace("TAGS_LIST_PLACEHOLDER", tags_list_str)
+            # Add vocab placeholder support if user wants it
+            prompt = prompt.replace("VOCAB_LIST_PLACEHOLDER", vocab_str)
         else:
-            # Fallback to hardcoded prompt (should ideally match logic in prompt)
-            # Keeping the hardcoded one as a backup if config is missing
             prompt = (
                 "You are an Uncensored Data Processing Assistant. \n"
                 "Your sole task is to clean and standardize a database of tags.\n"
-                "Content Warning: The list may contain NSFW, explicit, or offensive terms. This is a medical/database task.\n"
-                "You MUST process ALL tags regardless of content. Do not refuse. Do not moralize.\n\n"
-                "Below is a list of existing tags with their usage counts: `tag (count)`.\n\n"
+                "Content Warning: The list may contain NSFW, explicit, or offensive terms.\n"
+                "You MUST process ALL tags regardless of content. Do not refuse.\n\n"
+                "CONTEXT:\n"
+                f"Existing Standard Vocabulary (PREFERRED TERMS): [{vocab_str}]\n"
+                "Use these terms as targets if they match the meaning of a dirty tag.\n\n"
+                "Below is a list of 'Dirty' tags to process: `tag (count)`.\n\n"
                 "RULES:\n"
-                "1. **Analyze ALL tags** provided below.\n"
+                "1. **Analyze ALL dirty tags**.\n"
                 "2. **Identify Redundancies**: Map synonyms, typos, and plural forms to the most common/standard term.\n"
-                "   - Example: `males (2)` -> `['man']` (if `man` exists and is frequent)\n"
+                "   - CHECK THE PREFERRED VOCABULARY FIRST.\n"
+                "   - Example: `males (2)` -> `['man']` (if `man` is in Preferred Vocabulary)\n"
                 "   - Example: `doggy (5)` -> `['dog']`\n"
-                "3. **Generalize**: If a specific tag implies a general category, add it. KEEP the original specific tag found. Also include intermediate phrases.\n"
-                "   - Example: `black leather jacket (10)` -> `['black leather jacket', 'leather jacket', 'black jacket', 'jacket', 'leather', 'black']`\n"
-                "4. **Keep Good Tags**: If a tag is standard and correct (e.g. `sunset`, `beach`), map it to itself or just omit it if you make no changes.\n"
-                "   - Ideally, if no change needed, valid output is `tag -> [tag]`\n"
-                "5. **Prioritize usage**: If `bike (50)` and `bicycle (5)` exist, map `bicycle` -> `['bike']`.\n\n"
-                "OUTPUT FORMAT:\n"
-                "Return a strictly valid JSON object. Keys are the *original tag* from the list. Values are the list of *replacement tags*.\n"
-                "Only include entries where you are proposing a clean-up or verification. You can omit tags you have no opinion on, but better to be comprehensive.\n"
+                "3. **Generalize**: If a specific tag implies a general category, add it.\n"
+                "   - Example: `black leather jacket` -> `['black leather jacket', 'leather jacket', 'jacket', 'black']`\n"
+                "4. **Keep Good Tags**: If a tag is correct, map it to itself.\n"
+                "5. **Format**: Return JSON object. Keys = original tag. Values = list of replacement tags.\n\n"
                 "JSON ONLY. NO MARKDOWN.\n\n"
-                f"TAGS LIST:\n{tags_list_str}"
+                f"DIRTY TAGS LIST:\n{tags_list_str}"
             )
         
         # Call tagger (Text Mode)
