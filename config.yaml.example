@@ -23,8 +23,9 @@ gallery:
     - webp
 
 ai:
-  # LLaVA model to use (automatically downloads on first run)
-  model: "llava-hf/llava-1.5-7b-hf"
+  # - "prithivMLmods/Qwen3-VL-8B-Instruct-abliterated-v1" (Default)
+  # - "llava-hf/llava-1.5-7b-hf" (Classic)
+  model: "prithivMLmods/Qwen3-VL-8B-Instruct-abliterated-v1"
   
   # Auto-tag images on startup
   auto_tag: false

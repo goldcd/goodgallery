@@ -33,14 +33,17 @@ gallery:
 
 ai:
   # Model Selection
+  # Will auto-download the model if it's not found locally
   # Options:
-  # - "prithivMLmods/Qwen2.5-VL-7B-Abliterated-Caption-it" (Default, Uncensored, Smart)
+  # - "prithivMLmods/Qwen3-VL-8B-Instruct-abliterated-v1" 
+  # - "prithivMLmods/Qwen2.5-VL-7B-Abliterated-Caption-it"
   # - "llava-hf/llava-1.5-7b-hf" (Classic, robust)
-  model: "prithivMLmods/Qwen2.5-VL-7B-Abliterated-Caption-it"
+  model: "prithivMLmods/Qwen3-VL-8B-Instruct-abliterated-v1"
   
-  # Keep model loaded in GPU memory (faster but uses more VRAM)
+  # Keep model loaded in GPU memory (faster to start tagging, but retains VRAM usage until program is closed)
   try_keep_loaded: false
   # Enable 4-bit quantization (fits in ~6GB VRAM)
+  # Well, it's closer to 9 with the overhead
   use_quantization: true
   
   # Batch size for tagging
@@ -49,6 +52,8 @@ ai:
   batch_size: 12
   
   # Max image dimension (in pixels) for AI analysis
+  # Definitely need to set this - without limiting size regular photo will far exceed 16GB in processing
+  # Juggling this and the batch size is what determines VRAM usage over that required for the model
   # - 1024: Good balance of speed/detail (Default)
   # - 1280+: Better for small details, uses more VRAM
   max_image_size: 1280
@@ -91,13 +96,13 @@ ai:
     2. Grounding: Mentally formulate a three-sentence summary of the image to lock in visual facts.
     3. Extraction: Generate the tags based strictly on that summary and the image.
     4. Validation: Delete any tags that are not explicitly visible.
-    5. Iterate: If output does not match rules stated, abandon process and start again.
+    5. Finalize: Output the comma-separated list.
     
     OUTPUT FORMAT:
     Comma-separated list only.
     Alphabetical characters ONLY and comma for separation only.
     EXAMPLE (format only — do not reuse these tags, unless in the image):
-    Man, Red Car, City Street
+    Man, Red Car, City Street, Party, Attractive Woman, Birthday, Office, Cyberpunk City, Neon, Sunshine, Car, Woman, Child, Dog, Cat, Black Cat, Sad, Laughing, Paris, Eiffel Tower, Rishi Sunak, James Bond, Tom Cruise
     ASSISTANT:
 
 database:
