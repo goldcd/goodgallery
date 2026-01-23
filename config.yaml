@@ -38,7 +38,7 @@ ai:
   # - "prithivMLmods/Qwen3-VL-8B-Instruct-abliterated-v1" 
   # - "prithivMLmods/Qwen2.5-VL-7B-Abliterated-Caption-it"
   # - "llava-hf/llava-1.5-7b-hf" (Classic, robust)
-  model: "prithivMLmods/Qwen3-VL-8B-Instruct-abliterated-v1"
+  model: "prithivMLmods/Qwen3-VL-8B-Instruct-abliterated-v2"
   
   # Keep model loaded in GPU memory (faster to start tagging, but retains VRAM usage until program is closed)
   try_keep_loaded: false
@@ -49,7 +49,7 @@ ai:
   # Batch size for tagging
   # - 1: Safe, Stable, Low VRAM (Recommended for Qwen)
   # - 2+: Faster but uses significantly more VRAM. May crash if images are large.
-  batch_size: 1
+  batch_size: 25
   
   # Max image dimension (in pixels) for AI analysis
   # Definitely need to set this - without limiting size regular photo will far exceed 16GB in processing

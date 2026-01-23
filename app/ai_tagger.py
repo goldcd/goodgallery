@@ -199,6 +199,11 @@ class AITagger:
             
             # --- QWEN LOGIC ---
             if self.is_qwen:
+                # IMPORTANT: Decoder-only models need left-padding for generation
+                # Verify and set padding side
+                if hasattr(self.processor, "tokenizer"):
+                     self.processor.tokenizer.padding_side = "left"
+                
                 # Clean prompt: Remove "USER: <image>" artifacts if present, Qwen handles distinct roles
                 clean_prompt = self.tagging_prompt
                 clean_prompt = re.sub(r'USER:\s*<image>\s*', '', clean_prompt, flags=re.IGNORECASE).strip()
@@ -239,7 +244,9 @@ class AITagger:
                     # Generate
                     generated_ids = self.model.generate(**inputs, max_new_tokens=128)
                     
-                    # Trim inputs from outputs
+                    # Trim inputs from outputs logic for left-padding
+                    # When left-padding, the input_ids are at the end? No, generated tokens are appended at end.
+                    # Standard trim logic:
                     generated_ids_trimmed = [
                         out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
                     ]
