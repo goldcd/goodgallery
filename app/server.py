@@ -745,6 +745,10 @@ def manual_tagging_worker():
                 last_size = 0
                 file_pos = 0 # Position in output file
                 
+                # Log streaming state
+                last_log_size = 0
+                log_pos = 0
+                
                 while process.poll() is None:
                     # 1. Check for cancellation
                     with tagging_lock:
@@ -785,6 +789,23 @@ def manual_tagging_worker():
                                             print(f"[SERVER] Saved incremental batch of {len(batch_results)} tags")
                     except Exception as e:
                         print(f"[SERVER] Error reading incremental results: {e}")
+                    
+                    # 4. Stream WORKER LOGS to console
+                    try:
+                        if os.path.exists(log_file):
+                            current_log_size = os.path.getsize(log_file)
+                            if current_log_size > last_log_size:
+                                with open(log_file, 'r', errors='replace') as f:
+                                    f.seek(log_pos)
+                                    new_logs = f.read()
+                                    log_pos = f.tell()
+                                    last_log_size = current_log_size
+                                    
+                                    if new_logs:
+                                        print(new_logs, end='')
+                                        sys.stdout.flush()
+                    except Exception:
+                        pass
                     
                     time.sleep(1)
                 

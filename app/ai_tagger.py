@@ -291,8 +291,12 @@ class AITagger:
                 if "ASSISTANT:" in response:
                     response = response.split("ASSISTANT:")[-1].strip()
                 
+                print(f"[DEBUG] Raw response for {filename}: {repr(response)}")
+                
                 # Cleanup Logic
                 tags = self._clean_tags(response)
+                print(f"[DEBUG] Cleaned tags for {filename}: {tags}")
+                
                 tags = self._truncate_tags(tags)
                 
                 results.append({"filename": filename, "tags": tags})
