@@ -52,14 +52,17 @@ class AITagger:
     
     def load_model(self):
         """
-        Load LLaVA model into memory
-        Matches 'get_model' in tagger_client_v2.py
+        Load AI model into memory (LLaVA or Qwen2-VL)
         """
         if self.is_loaded:
             return
         
-        print(f"Loading LLaVA model on {self.device.upper()} (this may take a while)...")
-        print(f"  Using tagging prompt: {self.tagging_prompt[:80]}..." if len(self.tagging_prompt) > 80 else f"  Using tagging prompt: {self.tagging_prompt}")
+        self.is_qwen = "qwen" in self.model_id.lower()
+        print(f"Loading AI model ({self.model_id}) on {self.device.upper()}...")
+        
+        # Clean prompt for logging
+        prompt_preview = self.tagging_prompt.replace('\n', ' ')[:80]
+        print(f"  Using prompt: {prompt_preview}...")
         
         try:
             quantization_config = None
@@ -70,50 +73,75 @@ class AITagger:
                     from transformers import BitsAndBytesConfig
                     quantization_config = BitsAndBytesConfig(
                         load_in_4bit=True,
-                        bnb_4bit_compute_dtype=torch.float16
+                        bnb_4bit_compute_dtype=torch.float16,
+                        bnb_4bit_quant_type="nf4"
                     )
                 except ImportError:
                     print("Warning: bitsandbytes not installed, falling back to float16")
             
-            # Load Processor
+            # 1. Load Processor
+            print("  Loading processor...")
             self.processor = AutoProcessor.from_pretrained(
                 self.model_id, 
                 use_fast=True,
                 cache_dir=self.cache_dir
             )
             
-            # Load Model
+            # 2. Load Model
+            print("  Loading model weights...")
+            
+            # Use AutoModelForVision2Seq for both LLaVA and Qwen2-VL
+            # This handles class mapping automatically based on config.json
+            from transformers import AutoModelForVision2Seq
+            model_class = AutoModelForVision2Seq
+
             if quantization_config:
-                # 4-bit customized load (CUDA only)
-                self.model = LlavaForConditionalGeneration.from_pretrained(
-                    self.model_id,
-                    quantization_config=quantization_config,
-                    device_map="auto",
-                    cache_dir=self.cache_dir
-                )
+                try:
+                    # 4-bit customized load (CUDA only)
+                    print("  Attempting 4-bit quantization load...")
+                    self.model = model_class.from_pretrained(
+                        self.model_id,
+                        quantization_config=quantization_config,
+                        device_map="auto",
+                        cache_dir=self.cache_dir,
+                        trust_remote_code=True
+                    )
+                except Exception as e:
+                    print(f"⚠️  Quantization load failed: {e}")
+                    print("  Falling back to standard FP16 load (may use more VRAM)...")
+                    self.model = model_class.from_pretrained(
+                        self.model_id,
+                        device_map=self.device, 
+                        torch_dtype=torch.float16, 
+                        cache_dir=self.cache_dir,
+                        trust_remote_code=True
+                    )
             else:
-                # Standard load (Mac M1/M2/M3, CPU, or non-quantized CUDA)
-                self.model = LlavaForConditionalGeneration.from_pretrained(
+                # Standard load
+                self.model = model_class.from_pretrained(
                     self.model_id,
-                    device_map=self.device, # Explicitly map to mps/cpu/cuda
-                    torch_dtype=torch.float16, # Use float16 for efficiency on Mac too
-                    cache_dir=self.cache_dir
+                    device_map=self.device, 
+                    torch_dtype=torch.float16, 
+                    cache_dir=self.cache_dir,
+                    trust_remote_code=True
                 )
+            
+            # Qwen specific configuration
+            if self.is_qwen:
+                # Helper for Qwen vision inputs
+                try:
+                    from qwen_vl_utils import process_vision_info
+                    self.process_vision_info = process_vision_info
+                except ImportError:
+                    print("❌ Error: qwen-vl-utils not installed. Qwen model requires it.")
+                    print("   pip install qwen-vl-utils")
+                    raise
             
             print("[OK] Model loaded successfully!")
             self.is_loaded = True
             
-            # Optional: Log memory just for confirmation
-            try:
-                footprint = self.model.get_memory_footprint() / 1024**3
-                print(f"  Memory footprint: {footprint:.2f} GB")
-            except:
-                pass
-            
         except Exception as e:
             print(f"Error loading model: {e}")
-            if self.device == "cuda":
-                print("Ensure you have installed: torch transformers accelerate bitsandbytes")
             raise
 
     def _load_image_worker(self, path: str):
@@ -126,7 +154,7 @@ class AITagger:
     
     def tag_batch(self, image_paths: List[str]) -> List[Dict[str, any]]:
         """
-        Process batch - Matches 'process_batch' in tagger_client_v2.py
+        Process batch of images
         """
         if not self.is_loaded:
             raise RuntimeError("Model not loaded")
@@ -153,54 +181,107 @@ class AITagger:
             if not valid_images:
                 return results
             
-            # 2. Prompts - use configured prompt
-            prompts = [self.tagging_prompt] * len(valid_images)
+            # --- QWEN LOGIC ---
+            if self.is_qwen:
+                # Clean prompt: Remove "USER: <image>" artifacts if present, Qwen handles distinct roles
+                clean_prompt = self.tagging_prompt
+                clean_prompt = re.sub(r'USER:\s*<image>\s*', '', clean_prompt, flags=re.IGNORECASE).strip()
+                if "ASSISTANT:" in clean_prompt:
+                    clean_prompt = clean_prompt.split("ASSISTANT:")[0].strip()
+                
+                # Construct batch messages
+                messages = []
+                for img in valid_images:
+                    messages.append([
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "image", "image": img},
+                                {"type": "text", "text": clean_prompt},
+                            ],
+                        }
+                    ])
+                
+                # Prepare inputs
+                texts = [
+                    self.processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=True)
+                    for msg in messages
+                ]
+                
+                image_inputs, video_inputs = self.process_vision_info(messages)
+                
+                inputs = self.processor(
+                    text=texts,
+                    images=image_inputs,
+                    videos=video_inputs,
+                    padding=True,
+                    return_tensors="pt",
+                ).to(self.device)
+                
+                # Generate
+                generated_ids = self.model.generate(**inputs, max_new_tokens=128)
+                
+                # Trim inputs from outputs
+                generated_ids_trimmed = [
+                    out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+                ]
+                
+                outputs = self.processor.batch_decode(
+                    generated_ids_trimmed, 
+                    skip_special_tokens=True, 
+                    clean_up_tokenization_spaces=False
+                )
             
-            # 3. Tokenize
-            inputs = self.processor(
-                text=prompts,
-                images=valid_images,
-                return_tensors="pt",
-                padding=True
-            ).to(self.device) # Dynamic device mapping
-            
-            # 4. Generate
-            generate_ids = self.model.generate(
-                **inputs,
-                max_new_tokens=60,
-                do_sample=True,
-                temperature=0.6,
-                top_p=0.9
-            )
-            
-            # 5. Decode
-            outputs = self.processor.batch_decode(
-                generate_ids,
-                skip_special_tokens=True,
-                clean_up_tokenization_spaces=False
-            )
-            
-            # 6. Parse
-            # Reference: tagger_client_v2.py:138-201
+            # --- LLaVA LOGIC (Legacy) ---
+            else:
+                # Ensure prompt has image token
+                prompt = self.tagging_prompt
+                if "<image>" not in prompt:
+                    prompt = "USER: <image>\n" + prompt
+                
+                prompts = [prompt] * len(valid_images)
+                
+                inputs = self.processor(
+                    text=prompts,
+                    images=valid_images,
+                    return_tensors="pt",
+                    padding=True
+                ).to(self.device)
+                
+                generate_ids = self.model.generate(
+                    **inputs,
+                    max_new_tokens=60,
+                    do_sample=True,
+                    temperature=0.6,
+                    top_p=0.9
+                )
+                
+                outputs = self.processor.batch_decode(
+                    generate_ids,
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=False
+                )
+
+            # 6. Parse Results
             for i, output in enumerate(outputs):
                 original_path = valid_paths[i]
                 filename = os.path.basename(original_path)
                 
-                if "ASSISTANT:" in output:
-                    response = output.split("ASSISTANT:")[-1].strip()
-                else:
-                    response = output.strip()
+                # LLaVA output often includes input prompt, Qwen usually doesn't (due to trim above)
+                response = output
+                if "ASSISTANT:" in response:
+                    response = response.split("ASSISTANT:")[-1].strip()
                 
                 # Cleanup Logic
                 tags = self._clean_tags(response)
-                
-                # Truncate Logic
                 tags = self._truncate_tags(tags)
                 
                 results.append({"filename": filename, "tags": tags})
                 
         except Exception as e:
             print(f"Batch Processing Error: {e}")
+            import traceback
+            traceback.print_exc()
             for path in valid_paths:
                 if not any(r['filename'] == os.path.basename(path) for r in results):
                     results.append({"filename": os.path.basename(path), "tags": []})
@@ -271,25 +352,15 @@ class AITagger:
     def unload_model(self):
         """
         Comprehensive GPU memory cleanup following PyTorch best practices.
-        
-        The key issue: PyTorch's memory allocator caches memory for reuse.
-        Even after del + empty_cache(), nvidia-smi may show cached memory.
-        This is normal, BUT we want to truly release it for other applications.
         """
         if self.model is not None:
             print("🧹 Unloading model and releasing GPU memory...")
             
-            # Step 1: Move model to CPU first
-            # This forces PyTorch to transfer all tensors from GPU->CPU,
-            # which triggers GPU memory deallocation
             try:
                 self.model = self.model.to('cpu')
-                print("  [OK] Model moved to CPU")
-            except Exception as e:
-                print(f"  Warning during CPU transfer: {e}")
+            except:
+                pass
             
-            # Step 2: Delete all references explicitly
-            # Remove both model and processor references
             del self.model
             self.model = None
             
@@ -299,36 +370,16 @@ class AITagger:
             
             self.is_loaded = False
             
-            # Step 3: Force Python garbage collection TWICE
-            # First gc.collect() might not catch circular references
-            # Second pass ensures everything is truly freed
             import gc
             gc.collect()
             gc.collect()
-            print("  [OK] Python GC completed")
             
-            # Step 4: CUDA cleanup sequence
             if torch.cuda.is_available():
-                # Wait for all CUDA operations to complete
                 torch.cuda.synchronize()
-                
-                # Empty the CUDA cache (frees cached but unused blocks)
                 torch.cuda.empty_cache()
-                
-                # Additional cleanup for multi-process scenarios
                 try:
                     torch.cuda.ipc_collect()
                 except:
-                    pass  # Not all PyTorch versions have this
-                
-                # Reset memory stats (helps with fragmentation tracking)
-                try:
-                    torch.cuda.reset_peak_memory_stats()
-                    torch.cuda.reset_accumulated_memory_stats()
-                except:
                     pass
-                
-                print("  [OK] CUDA cache cleared")
             
-            print("[CLEANUP] Model unloaded - GPU memory should be released")
-            print("          (Note: nvidia-smi may show small residual PyTorch overhead)")
+            print("[CLEANUP] Model unloaded")

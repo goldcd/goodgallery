@@ -34,14 +34,36 @@ class BootstrapManager:
             import flask
             import PIL
             import yaml
+            # Check for qwen-vl-utils (required for Qwen models)
+            try:
+                import qwen_vl_utils
+            except ImportError:
+                # Only strictly required if using Qwen, but good to have consistency
+                if config.get('ai', {}).get('model', '').startswith('prithivMLmods/'):
+                    raise ImportError("qwen_vl_utils missing")
+            
             deps_installed = True
         except ImportError:
             deps_installed = False
         
+        # Check model directory based on config
+        model_exists = False
+        try:
+            if self.config_file.exists():
+                with open(self.config_file, 'r') as f:
+                    config = yaml.safe_load(f)
+                model_id = config.get('ai', {}).get('model', 'llava-hf/llava-1.5-7b-hf')
+                model_dirname = model_id.replace('/', '_')
+                model_path = self.models_dir / model_dirname
+                # Check if directory exists and has files
+                model_exists = model_path.exists() and any(model_path.iterdir())
+        except:
+            pass
+            
         checks = {
             "Dependencies installed": deps_installed,
             "Configuration file": self.config_file.exists(),
-            "Models directory": (self.models_dir / "llava").exists(),
+            "AI Model downloaded": model_exists,
         }
         
         all_complete = all(checks.values())
@@ -50,7 +72,7 @@ class BootstrapManager:
             print("✓ Setup complete - launching application...\n")
             return True
         else:
-            print("⚙️  First-time setup required\n")
+            print("⚙️  Setup check failed, running setup...\n")
             for name, status in checks.items():
                 icon = "✓" if status else "⏳"
                 print(f"  {icon} {name}")
@@ -105,47 +127,71 @@ class BootstrapManager:
             print(f"   Try running manually: {sys.executable} -m pip install -r requirements.txt")
             sys.exit(1)
     
-    def download_llava_model(self):
-        """Download LLaVA model using HuggingFace Hub"""
-        llava_dir = self.models_dir / "llava"
+    def download_ai_model(self):
+        """Download configured AI model using HuggingFace Hub"""
+        try:
+            import yaml
+            with open(self.config_file, 'r') as f:
+                config = yaml.safe_load(f)
+            model_id = config.get('ai', {}).get('model', 'llava-hf/llava-1.5-7b-hf')
+        except Exception as e:
+            print(f"⚠️  Could not read config for model selection ({e}). Defaulting to LLaVA.")
+            model_id = "llava-hf/llava-1.5-7b-hf"
+
+        # Determine safe directory name from model ID (replace / with _)
+        model_dirname = model_id.replace('/', '_')
+        model_dir = self.models_dir / model_dirname
         
-        if llava_dir.exists() and any(llava_dir.iterdir()):
-            print("✓ LLaVA model already downloaded\n")
+        if model_dir.exists() and any(model_dir.iterdir()):
+            print(f"✓ AI Model ({model_id}) already downloaded\n")
             return
         
-        print("🤖 Downloading LLaVA AI model...")
-        print("   Model: llava-hf/llava-1.5-7b-hf")
-        print("   Size: ~4GB (this will take several minutes)")
-        print("   Location: models/llava/\n")
+        print(f"🤖 Downloading AI model: {model_id}")
+        print("   Size: ~4GB++ (this will take several minutes)")
+        print(f"   Location: models/{model_dirname}/\n")
         
-        llava_dir.mkdir(parents=True, exist_ok=True)
+        model_dir.mkdir(parents=True, exist_ok=True)
         
         try:
-            # Use current Python to download
+            # Dynamic download script
             download_script = f"""
 import sys
-from transformers import AutoProcessor, LlavaForConditionalGeneration
 import torch
+from transformers import AutoProcessor
 
-print("   Downloading model files...")
-model_name = "llava-hf/llava-1.5-7b-hf"
-cache_dir = r"{llava_dir}"
+model_name = "{model_id}"
+cache_dir = r"{model_dir}"
 
-# Download processor
-processor = AutoProcessor.from_pretrained(
-    model_name,
-    cache_dir=cache_dir
-)
+print(f"   Target: {{model_name}}")
 
-# Download model (quantized to save space)
-model = LlavaForConditionalGeneration.from_pretrained(
-    model_name,
-    cache_dir=cache_dir,
-    torch_dtype=torch.float16,
-    low_cpu_mem_usage=True
-)
+try:
+    # 1. Download Processor (Common for both)
+    print("   Downloading processor...")
+    processor = AutoProcessor.from_pretrained(
+        model_name,
+        cache_dir=cache_dir
+    )
 
-print("\\n   Model downloaded successfully!")
+    # 2. Download Model
+    # Use AutoModelForVision2Seq to automatically pick the correct class (Qwen2VL, Qwen2.5VL, LLaVA, etc.)
+    print("   Downloading model weights...")
+    from transformers import AutoModelForVision2Seq
+    
+    # We use AutoModelForVision2Seq which covers both LLaVA and Qwen2-VL family
+    model_class = AutoModelForVision2Seq
+        
+    model = model_class.from_pretrained(
+        model_name,
+        cache_dir=cache_dir,
+        torch_dtype=torch.float16,
+        low_cpu_mem_usage=True,
+        trust_remote_code=True
+    )
+    print("\\n   Model downloaded successfully!")
+
+except Exception as e:
+    print(f"\\n❌ Error downloading: {{e}}")
+    sys.exit(1)
 """
             
             result = subprocess.run(
@@ -154,13 +200,12 @@ print("\\n   Model downloaded successfully!")
                 capture_output=False
             )
             
-            print("\n✓ LLaVA model downloaded\n")
+            print("\n✓ AI model downloaded\n")
             
         except subprocess.CalledProcessError as e:
-            print(f"\n❌ Failed to download LLaVA model: {e}")
+            print(f"\n❌ Failed to download model: {e}")
             print("   The app will attempt to download on first use")
             print("   You can continue, but AI tagging may be delayed\n")
-            # Don't exit - let the app try to download later
     
     def create_default_config(self):
         """Create default config.yaml from example"""
@@ -284,7 +329,7 @@ print("\\n   Model downloaded successfully!")
         self.create_photos_directory()
         self.create_default_config()
         self.install_dependencies()
-        self.download_llava_model()
+        self.download_ai_model()
         
         print("\n" + "="*60)
         print("   ✓ Setup Complete!")

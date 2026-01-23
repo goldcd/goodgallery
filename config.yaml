@@ -32,12 +32,14 @@ gallery:
     min_count: 1        # Minimum occurrences to be listed
 
 ai:
-  # LLaVA model to use (automatically downloads on first run)
-  model: "llava-hf/llava-1.5-7b-hf"
-
-
+  # Model Selection
+  # Options:
+  # - "prithivMLmods/Qwen2.5-VL-7B-Abliterated-Caption-it" (Default, Uncensored, Smart)
+  # - "llava-hf/llava-1.5-7b-hf" (Classic, robust)
+  model: "prithivMLmods/Qwen2.5-VL-7B-Abliterated-Caption-it"
+  
   # Keep model loaded in GPU memory (faster but uses more VRAM)
-  keep_model_loaded: false
+  try_keep_loaded: false
   # Enable 4-bit quantization (fits in ~6GB VRAM)
   use_quantization: true
   
