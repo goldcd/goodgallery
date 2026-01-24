@@ -172,7 +172,6 @@ def index():
         active_tag_states=active_tag_states,
         search_query=search_query,
         search_type=search_type,
-        view_mode=view_mode,
         page=page,
         has_more=has_more,
         total_files=total_files,
