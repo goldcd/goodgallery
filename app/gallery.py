@@ -136,6 +136,28 @@ class Gallery:
         print(f"Index complete: {len(files)} images found")
         return files
     
+    def sort_files(self, files: List[Dict], sort_method: str = 'date_desc') -> List[Dict]:
+        """
+        Sort files based on method
+        
+        methods:
+        - date_desc (default): Newest first
+        - date_asc: Oldest first
+        - name_asc: A-Z
+        - name_desc: Z-A
+        """
+        if not files:
+            return []
+            
+        if sort_method == 'date_asc':
+            return sorted(files, key=lambda x: x['time'])
+        elif sort_method == 'name_asc':
+            return sorted(files, key=lambda x: x['name'].lower())
+        elif sort_method == 'name_desc':
+            return sorted(files, key=lambda x: x['name'].lower(), reverse=True)
+        else: # date_desc (default)
+            return sorted(files, key=lambda x: x['time'], reverse=True)
+
     def search_by_filename(self, files: List[Dict], query: str) -> List[Dict]:
         """
         Filter files by filename

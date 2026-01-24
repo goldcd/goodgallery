@@ -749,6 +749,15 @@
 
 
             <form class="search-box" method="get">
+                <select name="sort" onchange="this.form.submit()" style="margin-right:5px; background:#f8f9fa;">
+                    <option value="date_desc" {% if current_sort=='date_desc' %}selected{% endif %}>📅 Date (Newest)
+                    </option>
+                    <option value="date_asc" {% if current_sort=='date_asc' %}selected{% endif %}>📅 Date (Oldest)
+                    </option>
+                    <option value="name_asc" {% if current_sort=='name_asc' %}selected{% endif %}>🔤 Name (A-Z)</option>
+                    <option value="name_desc" {% if current_sort=='name_desc' %}selected{% endif %}>🔤 Name (Z-A)
+                    </option>
+                </select>
                 <select name="t" id="searchType">
                     <option value="tag" {% if search_type=='tag' %}selected{% endif %}>Tags</option>
                     <option value="name" {% if search_type=='name' %}selected{% endif %}>Filename</option>

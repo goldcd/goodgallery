@@ -118,6 +118,7 @@ def index():
     # Get search parameters
     search_query = request.args.get('q', '').strip()
     search_type = request.args.get('t', 'tag')  # 'tag' or 'name'
+    sort_method = request.args.get('sort', 'date_desc')
     page = int(request.args.get('page', 1))
     
     # Get all files
@@ -136,6 +137,10 @@ def index():
             # Filter files to only matching ones
             matching_set = set(f.lower() for f in matching_filenames)
             files = [f for f in files if f['name'].lower() in matching_set]
+    
+    # Sort
+    sort_method = request.args.get('sort', 'date_desc')
+    files = gallery.sort_files(files, sort_method)
     
     # Paginate
     per_page = config['gallery']['images_per_page']
@@ -172,6 +177,7 @@ def index():
         active_tag_states=active_tag_states,
         search_query=search_query,
         search_type=search_type,
+        current_sort=sort_method,
         page=page,
         has_more=has_more,
         total_files=total_files,
