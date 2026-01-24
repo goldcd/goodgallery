@@ -44,21 +44,10 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     filename TEXT UNIQUE NOT NULL COLLATE NOCASE,
                     tags TEXT,
-                    tags_clean TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
 
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS consolidation_rules (
-                    original_tag TEXT PRIMARY KEY,
-                    replacement_tags TEXT,
-                    status TEXT DEFAULT 'pending', -- pending, approved, rejected
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
             # Create indexes for faster searches
             conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_filename 
@@ -69,13 +58,6 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_tags 
                 ON image_tags(tags)
             """)
-
-            # Check for tags_clean column (migration)
-            cursor = conn.execute("PRAGMA table_info(image_tags)")
-            columns = [info['name'] for info in cursor.fetchall()]
-            if 'tags_clean' not in columns:
-                print("Migrating database: Adding tags_clean column...")
-                conn.execute("ALTER TABLE image_tags ADD COLUMN tags_clean TEXT")
     
     def get_tagged_filenames(self) -> set:
         """Get set of all tagged filenames (case-insensitive)"""
@@ -125,13 +107,12 @@ class Database:
         
         with self.get_connection() as conn:
             conn.execute("""
-                INSERT INTO image_tags (filename, tags, tags_clean, updated_at)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO image_tags (filename, tags, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(filename) DO UPDATE SET
                     tags = excluded.tags,
-                    tags_clean = excluded.tags_clean,
                     updated_at = CURRENT_TIMESTAMP
-            """, (filename, clean_tags, clean_tags))
+            """, (filename, clean_tags))
     
     def save_tags_batch(self, items: List[Dict[str, str]]):
         """
@@ -151,13 +132,12 @@ class Database:
                 clean_tags = self._clean_tags(tags)
                 
                 conn.execute("""
-                    INSERT INTO image_tags (filename, tags, tags_clean, updated_at)
-                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                    INSERT INTO image_tags (filename, tags, updated_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
                     ON CONFLICT(filename) DO UPDATE SET
                         tags = excluded.tags,
-                        tags_clean = excluded.tags_clean,
                         updated_at = CURRENT_TIMESTAMP
-                """, (filename, clean_tags, clean_tags))
+                """, (filename, clean_tags))
     
     def delete_tags(self, filename: str):
         """Delete tags entry for a file"""
@@ -167,7 +147,7 @@ class Database:
                 (filename,)
             )
     
-    def search_by_tags(self, search_terms: List[Tuple[str, bool]], column: str = 'tags') -> List[str]:
+    def search_by_tags(self, search_terms: List[Tuple[str, bool]]) -> List[str]:
         """
         Search for files by tags using boolean logic with whole-word matching.
         
@@ -178,8 +158,6 @@ class Database:
         Example: [("beach", False), ("sunset", False), ("people", True)]
         = has beach AND sunset AND NOT people
         
-        column: 'tags' or 'tags_clean'
-        
         Returns: list of matching filenames
         """
         if not search_terms:
@@ -188,10 +166,6 @@ class Database:
         # Build WHERE clause with REGEXP for each term
         conditions = []
         params = []
-        
-        # Validate column name to prevent injection
-        if column not in ['tags', 'tags_clean']:
-            raise ValueError("Invalid column name")
         
         for term, is_negative in search_terms:
             # Match complete tags in comma-separated list
@@ -208,9 +182,9 @@ class Database:
             pattern = fr"(?:^|,)\s*(?:[\*\-\s]*){escaped_term}(?:[\*\-\s]*)(?:,|$)"
             
             if is_negative:
-                conditions.append(f"{column} NOT REGEXP ?")
+                conditions.append(f"tags NOT REGEXP ?")
             else:
-                conditions.append(f"{column} REGEXP ?")
+                conditions.append(f"tags REGEXP ?")
             
             params.append(pattern)
         
@@ -249,45 +223,32 @@ class Database:
                 'untagged': total - tagged
             }
     
-    def get_all_tags(self, column: str = 'tags') -> Dict[str, int]:
+    def get_all_tags(self) -> Dict[str, int]:
         """
         Get all unique tags with their frequencies
-        column: 'tags' or 'tags_clean'
         Returns: {"tag": count, ...}
         """
-        # Validate column name
-        if column not in ['tags', 'tags_clean']:
-             raise ValueError("Invalid column name")
-
         tag_counts = {}
         
         with self.get_connection() as conn:
-            # If requesting tags_clean, fallback to tags if null
-            # This ensures we get a complete list for autocomplete even if some images aren't processed
-            if column == 'tags_clean':
-                query = "SELECT COALESCE(tags_clean, tags) as val FROM image_tags WHERE tags IS NOT NULL"
-            else:
-                query = f"SELECT {column} as val FROM image_tags WHERE {column} IS NOT NULL"
-                
-            cursor = conn.execute(query)
+            cursor = conn.execute("SELECT tags FROM image_tags WHERE tags IS NOT NULL")
             
             for row in cursor:
-                if row['val']:
+                if row['tags']:
                     # Split by comma and count each tag
-                    tags = [t.strip().lower() for t in row['val'].split(',')]
+                    tags = [t.strip().lower() for t in row['tags'].split(',')]
                     for tag in tags:
                         if tag:
                             tag_counts[tag] = tag_counts.get(tag, 0) + 1
         
         return tag_counts
     
-    def get_top_tags(self, limit: int = 50, min_count: int = 2, column: str = 'tags') -> List[Tuple[str, int]]:
+    def get_top_tags(self, limit: int = 50, min_count: int = 2) -> List[Tuple[str, int]]:
         """
         Get most common tags
-        column: 'tags' or 'tags_clean'
         Returns: [(tag, count), ...] sorted by frequency
         """
-        tag_counts = self.get_all_tags(column=column)
+        tag_counts = self.get_all_tags()
         
         # Filter by minimum count and sort
         filtered = [(tag, count) for tag, count in tag_counts.items() if count >= min_count]
@@ -295,72 +256,4 @@ class Database:
         
         return filtered[:limit]
 
-    # --- Consolidation Rules ---
-    
-    def save_consolidation_rule(self, original: str, replacements: List[str], status: str = 'pending'):
-        """Save a tag consolidation rule"""
-        import json
-        with self.get_connection() as conn:
-            conn.execute("""
-                INSERT INTO consolidation_rules (original_tag, replacement_tags, status, created_at)
-                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(original_tag) DO UPDATE SET
-                    replacement_tags = excluded.replacement_tags,
-                    status = excluded.status
-            """, (original, json.dumps(replacements), status))
 
-    def get_consolidation_rules(self, status: str = None) -> List[Dict]:
-        """Get all consolidation rules, optionally filtered by status"""
-        query = "SELECT * FROM consolidation_rules"
-        params = []
-        if status:
-            query += " WHERE status = ?"
-            params.append(status)
-            
-        with self.get_connection() as conn:
-            cursor = conn.execute(query, params)
-            import json
-            results = []
-            for row in cursor:
-                results.append({
-                    'original_tag': row['original_tag'],
-                    'replacement_tags': json.loads(row['replacement_tags']),
-                    'status': row['status'],
-                    'created_at': row['created_at']
-                })
-            return results
-
-    def save_clean_tags_batch(self, items: List[Dict[str, str]]):
-        """
-        Batch save CLEAN tags for multiple files
-        items: [{"filename": "...", "tags_clean": "..."}, ...]
-        """
-        with self.get_connection() as conn:
-            for item in items:
-                conn.execute("""
-                    UPDATE image_tags 
-                    SET tags_clean = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE filename = ?
-                """, (item['tags_clean'], item['filename']))
-                
-    def get_clean_tags(self, filename: str) -> Optional[str]:
-        """Get clean tags for a specific file"""
-        with self.get_connection() as conn:
-            cursor = conn.execute(
-                "SELECT tags_clean FROM image_tags WHERE filename = ? COLLATE NOCASE",
-                (filename,)
-            )
-            row = cursor.fetchone()
-            return row['tags_clean'] if row else None
-
-    def backfill_clean_tags(self):
-        """
-        Ensure all records have tags_clean populated.
-        Sets tags_clean = tags where it is NULL.
-        """
-        with self.get_connection() as conn:
-            conn.execute("""
-                UPDATE image_tags 
-                SET tags_clean = tags 
-                WHERE tags_clean IS NULL AND tags IS NOT NULL
-            """)

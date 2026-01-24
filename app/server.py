@@ -72,10 +72,7 @@ def run_validation():
     thumbs.validate_cache()
     print("Startup: Thumbnail validation complete.")
     
-    # Backfill clean tags if missing
-    print("Startup: Checking for missing clean tags...")
-    db.backfill_clean_tags()
-    print("Startup: Clean tags synchronized.")
+    print("Startup: Thumbnail validation complete.")
 
 import threading
 validation_thread = threading.Thread(target=run_validation, daemon=True)
@@ -121,7 +118,6 @@ def index():
     # Get search parameters
     search_query = request.args.get('q', '').strip()
     search_type = request.args.get('t', 'tag')  # 'tag' or 'name'
-    view_mode = request.args.get('view', 'raw') # 'raw' or 'clean'
     page = int(request.args.get('page', 1))
     
     # Get all files
@@ -133,40 +129,9 @@ def index():
             # Filename search
             files = gallery.search_by_filename(files, search_query)
         else:
-            # Tag search - Depends on view mode?
-            # Ideally, if in clean mode, we search against clean tags.
-            # But the existing `db.search_by_tags` uses `image_tags.tags` column.
-            # We need to update `search_by_tags` to accept a column name, or just assume raw tags for search 
-            # OR we stick to raw search for now, but display clean tags.
-            # PLAN: Let's stick to raw search for simplicity in this iteration, 
-            # UNLESS the user explicitly wants to search clean tags. 
-            # But wait, if I consolidate "jogging man" -> "running", I expect "running" to find it.
-            # So we SHOULD search the clean tags column if view_mode is clean.
-            
-            # However, modifying `search_by_tags` is another DB change.
-            # Let's check `search_by_tags` implementation.
-            # It hardcodes 'tags'.
-            
-            # Search logic
-            if view_mode == 'clean':
-                # Search clean tags column
-                # This requires DB update to support column selection or a new method
-                # Adding support to search_by_tags is cleanest
-                matching_filenames = db.search_by_tags(gallery.parse_tag_search(search_query), column='tags_clean')
-            else:
-                # Search raw tags
-                matching_filenames = db.search_by_tags(gallery.parse_tag_search(search_query), column='tags')
-            # If the user searches "running", they might miss "jogging man" if we only search clean tags 
-            # AND the clean tags haven't been applied yet.
-            # If applied, "jogging man" becomes "running", so raw search for "running" MIGHT miss it if it was only in clean.
-            # Wait, clean tags REPLACE the meaning. 
-            # If we write clear tags to a new column, the original tags are still there.
-            
-            # Let's keep search on RAW for now to ensure we find everything, 
-            # but visual display updates.
-            
-            search_terms = gallery.parse_tag_search(search_query)
-            matching_filenames = db.search_by_tags(search_terms)
+            # Tag search
+            # Search raw tags
+            matching_filenames = db.search_by_tags(gallery.parse_tag_search(search_query))
             
             # Filter files to only matching ones
             matching_set = set(f.lower() for f in matching_filenames)
@@ -183,14 +148,7 @@ def index():
     # Get tags for all files in current page
     tags_map = {}
     for file in page_files:
-        if view_mode == 'clean':
-            tags_str = db.get_clean_tags(file['name'])
-            # If no clean tags yet, fallback to raw? Or show empty?
-            # Fallback to raw makes sense for smooth transition
-            if not tags_str:
-                tags_str = db.get_tags(file['name'])
-        else:
-            tags_str = db.get_tags(file['name'])
+        tags_str = db.get_tags(file['name'])
             
         if tags_str:
             # Clean tags: remove asterisks and extra whitespace, and sort alphabetically
@@ -363,11 +321,6 @@ def api_save_tags():
     # Save to database
     db.save_tags_batch(items)
     
-    # Auto-apply consolidation rules to these files
-    filenames = [item['filename'] for item in items if 'filename' in item]
-    if filenames:
-        consolidator.apply_rules_to_files(filenames)
-    
     return jsonify({
         'status': 'ok',
         'processed': len(items)
@@ -375,12 +328,8 @@ def api_save_tags():
 
 
 @app.route('/api/tags')
-@app.route('/api/tags')
 def api_tags():
     """Get all tags with frequencies"""
-    view_mode = request.args.get('view', 'raw')
-    column = 'tags_clean' if view_mode == 'clean' else 'tags'
-    
     # Get limits from config or defaults
     config_limits = config['gallery'].get('tag_limits', {})
     default_limit = config_limits.get('dropdown', 1000)
@@ -389,7 +338,7 @@ def api_tags():
     min_count = int(request.args.get('min_count', default_min))
     limit = int(request.args.get('limit', default_limit))
     
-    top_tags = db.get_top_tags(limit=limit, min_count=min_count, column=column)
+    top_tags = db.get_top_tags(limit=limit, min_count=min_count)
     
     # Return as simple list of tag names
     return jsonify([tag for tag, count in top_tags])
@@ -403,12 +352,9 @@ def api_file_count():
 
 
 @app.route('/api/related_tags')
-@app.route('/api/related_tags')
 def api_related_tags():
     """Get related tags for a search query"""
     search_query = request.args.get('q', '').strip()
-    view_mode = request.args.get('view', 'raw')
-    column = 'tags_clean' if view_mode == 'clean' else 'tags'
     
     if not search_query:
         # Return popular tags
@@ -417,25 +363,17 @@ def api_related_tags():
         browse_limit = config_limits.get('browse', 100)
         min_count = config_limits.get('min_count', 1)
         
-        top_tags = db.get_top_tags(limit=browse_limit, min_count=min_count, column=column)
+        top_tags = db.get_top_tags(limit=browse_limit, min_count=min_count)
         return jsonify({tag: count for tag, count in top_tags})
     
     # Parse search and get matching files
     search_terms = gallery.parse_tag_search(search_query)
-    matching_filenames = db.search_by_tags(search_terms, column=column)
+    matching_filenames = db.search_by_tags(search_terms)
     
     # Count tags in matching images
     tag_counts = {}
     for filename in matching_filenames:
-        if view_mode == 'clean':
-            tags_str = db.get_clean_tags(filename)
-            # Fallback handled by db.get_clean_tags? No, db.get_clean_tags returns value or None.
-            # But we backfilled, so it should be fine.
-            # However, for robustness:
-            if not tags_str:
-                tags_str = db.get_tags(filename)
-        else:
-            tags_str = db.get_tags(filename)
+        tags_str = db.get_tags(filename)
             
         if tags_str:
             tags = [t.strip().lower() for t in tags_str.split(',')]
@@ -475,11 +413,6 @@ def api_tag_batch():
         
         # Save to database
         db.save_tags_batch(results)
-        
-        # Auto-apply consolidation rules
-        filenames = [os.path.basename(p) for p in image_paths]
-        if filenames:
-            consolidator.apply_rules_to_files(filenames)
         
         return jsonify({
             'status': 'ok',
@@ -637,222 +570,9 @@ def api_export():
 # --- CONSOLIDATION ROUTES ---
 
 # --- CONSOLIDATION ROUTES ---
-from app.tag_consolidator import TagConsolidator
-consolidator = TagConsolidator(db, None) # No AI needed for applying rules
 
-@app.route('/consolidate')
-def consolidate_view():
-    """Consolidation UI"""
-    return render_template('consolidate.html', app_title=config['gallery'].get('title', 'GoodGallery'))
 
-@app.route('/api/consolidate/generate', methods=['POST'])
-def api_consolidate_generate():
-    """Generate consolidation proposals using AI (subprocess)"""
-    try:
-        # Check if already running
-        global tagging_state, tagging_thread
-        with tagging_lock:
-             if tagging_state['running']:
-                 return jsonify({'error': 'A background task is already running'}), 409
-             
-             tagging_state['running'] = True
-             tagging_state['status'] = 'Initializing consolidation worker...'
-             tagging_state['current'] = 0
-             tagging_state['total'] = 0
-             tagging_state['error'] = None
 
-        def run_generation_monitor():
-            import tempfile
-            import subprocess
-            import time
-            import json
-            
-            config_file = None
-            progress_file = None
-            log_file = None
-            
-            try:
-                # Prepare worker config
-                fd, config_file = tempfile.mkstemp(suffix='.json', text=True)
-                os.close(fd)
-                fd, progress_file = tempfile.mkstemp(suffix='.json', text=True)
-                os.close(fd)
-                fd, log_file = tempfile.mkstemp(suffix='.log', text=True)
-                os.close(fd)
-                
-                worker_config = {
-                    'db_path': DB_PATH,
-                    'model_id': config['ai']['model'],
-                    'use_quantization': config['ai']['use_quantization'],
-                    'cache_dir': os.path.join(ROOT_DIR, 'models', config['ai']['model'].replace('/', '_')),
-                    'progress_file': progress_file
-                }
-                
-                with open(config_file, 'w') as f:
-                    json.dump(worker_config, f)
-                
-                # Check for tagger instance and unload if loaded (to free VRAM for worker)
-                # Note: If we have a global tagger loaded in server process, we SHOULD unload it.
-                # However, our server uses lazy loading mostly. 
-                # If we have one, let's try to unload it.
-                global ai_tagger
-                if ai_tagger and ai_tagger.is_loaded:
-                    print("Unloading server-side AI model to free VRAM for worker...")
-                    ai_tagger.unload_model()
-
-                # Spawn worker
-                worker_script = os.path.join(ROOT_DIR, 'app', 'consolidation_worker.py')
-                env = os.environ.copy()
-                env['PYTHONIOENCODING'] = 'utf-8'
-                
-                with open(log_file, 'w') as log_f:
-                    process = subprocess.Popen(
-                        [sys.executable, worker_script, config_file],
-                        stdout=log_f,
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        env=env
-                    )
-                    
-                    # Monitor
-                    while process.poll() is None:
-                        # Check cancel
-                        with tagging_lock:
-                            if tagging_state['cancel_requested']:
-                                process.terminate()
-                                tagging_state['running'] = False
-                                tagging_state['status'] = 'Cancelled'
-                                return
-
-                        # Read progress
-                        try:
-                            if os.path.exists(progress_file):
-                                with open(progress_file, 'r') as f:
-                                    prog = json.load(f)
-                                    with tagging_lock:
-                                        tagging_state['status'] = prog.get('status', 'Processing...')
-                                        tagging_state['current'] = prog.get('current', 0)
-                                        tagging_state['total'] = prog.get('total', 0)
-                                        if prog.get('error'):
-                                             tagging_state['error'] = prog['error']
-                        except:
-                            pass
-                            
-                        time.sleep(1)
-                    
-                    if process.returncode != 0:
-                        with tagging_lock:
-                            # Try to read error from progress file first
-                            try:
-                                with open(progress_file, 'r') as f:
-                                    prog = json.load(f)
-                                    if prog.get('error'):
-                                        tagging_state['error'] = prog['error']
-                                        tagging_state['running'] = False
-                                        return
-                            except:
-                                pass
-                            
-                            tagging_state['running'] = False
-                            tagging_state['error'] = f"Worker failed with code {process.returncode}"
-                    else:
-                        with tagging_lock:
-                            tagging_state['running'] = False
-                            tagging_state['status'] = 'Completed'
-
-            except Exception as e:
-                with tagging_lock:
-                    tagging_state['running'] = False
-                    tagging_state['error'] = str(e)
-            finally:
-                # Debug: Print log file content if it exists
-                if log_file and os.path.exists(log_file):
-                    try:
-                        with open(log_file, 'r') as f:
-                            print(f"--- WORKER LOG ({log_file}) ---")
-                            print(f.read())
-                            print("------------------------------")
-                    except:
-                        pass
-                        
-                # Cleanup
-                for f in [config_file, progress_file, log_file]:
-                    if f and os.path.exists(f):
-                        try:
-                            os.remove(f)
-                        except:
-                            pass
-
-        tagging_thread = threading.Thread(target=run_generation_monitor, daemon=True)
-        tagging_thread.start()
-        
-        return jsonify({'status': 'started'})
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/consolidate/rules', methods=['GET'])
-def api_get_rules():
-    """Get rules filtered by status, decorated with usage counts"""
-    status = request.args.get('status') # pending, approved, rejected, or None (all)
-    rules = db.get_consolidation_rules(status)
-    
-    # Decorate with counts
-    # This might be heavy if many tags, but necessary for UX "10 instances of gag"
-    all_counts = db.get_all_tags()
-    
-    for rule in rules:
-        original = rule['original_tag']
-        # Count is from raw tags
-        rule['count'] = all_counts.get(original, 0)
-        
-    return jsonify({'rules': rules})
-
-@app.route('/api/consolidate/rules', methods=['POST'])
-def api_update_rule():
-    """Update a specific rule"""
-    data = request.get_json()
-    original = data.get('original_tag')
-    status = data.get('status')
-    replacements = data.get('replacement_tags', [])
-    
-    if not original or not status:
-        return jsonify({'error': 'Missing fields'}), 400
-        
-    db.save_consolidation_rule(original, replacements, status)
-    return jsonify({'status': 'ok'})
-
-@app.route('/api/consolidate/apply', methods=['POST'])
-def api_apply_rules():
-    """Apply approved rules to update tags_clean"""
-    try:
-        # We can also run this in background
-        global tagging_state, tagging_thread
-        with tagging_lock:
-             if tagging_state['running']:
-                 return jsonify({'error': 'A background task is already running'}), 409
-             
-             tagging_state['running'] = True
-             tagging_state['status'] = 'Applying rules...'
-
-        def run_apply():
-            try:
-                consolidator = TagConsolidator(db, None) # No AI needed for apply
-                count = consolidator.apply_rules()
-                with tagging_lock:
-                    tagging_state['running'] = False
-                    tagging_state['status'] = f"Updated {count} images"
-            except Exception as e:
-                with tagging_lock:
-                    tagging_state['running'] = False
-                    tagging_state['error'] = str(e)
-        
-        tagging_thread = threading.Thread(target=run_apply, daemon=True)
-        tagging_thread.start()
-        
-        return jsonify({'status': 'started'})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 
 # --- MANUAL TAGGING STATE ---

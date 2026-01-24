@@ -746,19 +746,7 @@
                 </div>
             </div>
 
-            <!-- New Consolidation Controls -->
-            <a href="/consolidate" class="tag-button" style="background: #6f42c1; text-decoration:none;">
-                ✨ Consolidate
-            </a>
 
-            <div class="search-box">
-                <label style="font-size:12px; font-weight:600; color:#666; margin-right:5px;">View:</label>
-                <select id="viewMode" onchange="changeViewMode(this.value)" style="padding:8px;">
-                    <option value="raw" {% if request.args.get('view') !='clean' %}selected{% endif %}>Raw Tags</option>
-                    <option value="clean" {% if request.args.get('view')=='clean' %}selected{% endif %}>Clean Tags
-                    </option>
-                </select>
-            </div>
 
             <form class="search-box" method="get">
                 <select name="t" id="searchType">
@@ -1326,15 +1314,13 @@
             });
         }
 
-        // Load tags from current view (for browsing)
+        // Load tags (popular or related)
         function loadCurrentViewTags() {
             const query = searchInput.value.trim() || '';
-            const viewSelect = document.getElementById('viewMode');
-            const viewMode = viewSelect ? viewSelect.value : 'raw';
 
             // ALWAYS use related_tags API (returns {tag: count}) to ensure we get counts
             // server.py handles empty query by returning top tags
-            const url = `/api/related_tags?q=${encodeURIComponent(query)}&view=${viewMode}`;
+            const url = `/api/related_tags?q=${encodeURIComponent(query)}`;
 
             fetch(url)
                 .then(r => r.json())
@@ -1783,13 +1769,6 @@
             }
         });
 
-        function changeViewMode(mode) {
-            const url = new URL(window.location.href);
-            url.searchParams.set('view', mode);
-            // Reset page on view change
-            url.searchParams.set('page', 1);
-            window.location.href = url.toString();
-        }
     </script>
 </body>
 
