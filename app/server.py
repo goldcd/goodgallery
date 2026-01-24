@@ -355,13 +355,13 @@ def api_related_tags():
     """Get related tags for a search query"""
     search_query = request.args.get('q', '').strip()
     
+    # Get limits from config
+    config_limits = config['gallery'].get('tag_limits', {})
+    browse_limit = config_limits.get('browse', 100)
+    min_count = config_limits.get('min_count', 1)
+    
     if not search_query:
         # Return popular tags
-        # Use browse limit from config
-        config_limits = config['gallery'].get('tag_limits', {})
-        browse_limit = config_limits.get('browse', 100)
-        min_count = config_limits.get('min_count', 1)
-        
         top_tags = db.get_top_tags(limit=browse_limit, min_count=min_count)
         return jsonify({tag: count for tag, count in top_tags})
     
@@ -380,8 +380,8 @@ def api_related_tags():
                 if tag:
                     tag_counts[tag] = tag_counts.get(tag, 0) + 1
     
-    # Sort and return top 30
-    sorted_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:30]
+    # Sort and return top N
+    sorted_tags = sorted(tag_counts.items(), key=lambda x: x[1], reverse=True)[:browse_limit]
     
     return jsonify({tag: count for tag, count in sorted_tags})
 
