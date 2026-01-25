@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tag Cloud - {{ app_title }}</title>
+    <!-- Use Plotly.js for high-performance GL charts -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f8f9fa;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: white;
+            padding: 15px 20px;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            z-index: 10;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 20px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #545b62;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Sidebar for topics */
+        .sidebar {
+            width: 300px;
+            background: white;
+            border-right: 1px solid #ddd;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            font-weight: 600;
+            background: #fafafa;
+        }
+
+        .cluster-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .cluster-item {
+            padding: 12px 15px;
+            border-bottom: 1px solid #f0f0f0;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .cluster-item:hover {
+            background: #f8f9fa;
+        }
+
+        .cluster-item.active {
+            background: #e8f0fe;
+            border-left: 4px solid #007bff;
+        }
+
+        .cluster-name {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .cluster-count {
+            font-size: 12px;
+            color: #999;
+            background: #eee;
+            padding: 2px 6px;
+            border-radius: 10px;
+        }
+
+        /* Visualization Area */
+        .viz-container {
+            flex: 1;
+            position: relative;
+            background: #fff;
+        }
+
+        #galaxyPlot {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Overlays */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .progress-box {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            width: 400px;
+            text-align: center;
+            border: 1px solid #ddd;
+        }
+
+        .progress-bar-bg {
+            background: #eee;
+            height: 10px;
+            border-radius: 5px;
+            margin: 15px 0;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            background: #28a745;
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .status-text {
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #666;
+        }
+
+        .empty-icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+            display: block;
+            opacity: 0.5;
+        }
+
+        .tabs {
+            padding: 0 20px;
+            background: white;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            gap: 20px;
+        }
+
+        .tab-btn {
+            padding: 12px 0;
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            font-weight: 500;
+            color: #666;
+        }
+
+        .tab-btn.active {
+            color: #007bff;
+            border-bottom-color: #007bff;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <div style="display:flex; align-items:center; gap:15px;">
+            <a href="/" style="text-decoration:none; font-size:20px; margin-right:10px;">🏠</a>
+            <h1>Tag Cloud Analysis</h1>
+        </div>
+        <div class="controls">
+            <button id="analyzeBtn" class="btn-primary" onclick="startAnalysis()">Re-Analyze Library</button>
+        </div>
+    </header>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('galaxy')">🌌 Galaxy Map (Scatter)</button>
+        <button class="tab-btn" onclick="switchTab('topics')">📝 Topic List</button>
+    </div>
+
+    <div class="main-content">
+        <!-- Sidebar -->
+        <div class="sidebar" id="topicSidebar">
+            <div class="sidebar-header">Deep Clusters</div>
+            <div id="clusterList" class="cluster-list">
+                <!-- Items injected here -->
+            </div>
+        </div>
+
+        <!-- Viz Area -->
+        <div class="viz-container" id="vizContainer">
+            <div id="galaxyPlot"></div>
+
+            <!-- Empty State -->
+            <div id="emptyState" class="overlay">
+                <div class="empty-state">
+                    <span class="empty-icon">🧠</span>
+                    <h2>No Analysis Data</h2>
+                    <p>Run analysis to generate clustered tag map.</p>
+                    <button class="btn-primary" onclick="startAnalysis()">Start Analysis</button>
+                </div>
+            </div>
+
+            <!-- Progress Overlay -->
+            <div id="progressOverlay" class="overlay hidden">
+                <div class="progress-box">
+                    <h3>Analyzing Library...</h3>
+                    <p id="statusText" class="status-text">Initializing...</p>
+                    <div class="progress-bar-bg">
+                        <div id="progressFill" class="progress-bar-fill"></div>
+                    </div>
+                    <button class="btn-secondary" onclick="cancelAnalysis()">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Topic View (Hidden by default) -->
+        <div id="topicView" class="hidden" style="flex: 1; padding: 20px; overflow-y: auto; background: #f8f9fa;">
+            <div id="topicGrid"
+                style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px;">
+                <!-- Topics injected here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let pollInterval = null;
+        let analysisData = null;
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            loadData();
+        });
+
+        function loadData() {
+            fetch('/api/tag_data')
+                .then(r => {
+                    if (r.status === 404) return null;
+                    return r.json();
+                })
+                .then(data => {
+                    if (data) {
+                        analysisData = data;
+                        renderGalaxy(data);
+                        renderClusters(data);
+                        renderTopicGrid(data);
+                        document.getElementById('emptyState').classList.add('hidden');
+                    } else {
+                        document.getElementById('emptyState').classList.remove('hidden');
+                    }
+                })
+                .catch(err => console.error(err));
+
+            // Check if running
+            checkStatus();
+        }
+
+        function startAnalysis() {
+            fetch('/api/start_analysis', { method: 'POST' })
+                .then(r => r.json())
+                .then(res => {
+                    if (res.status === 'started' || res.status === 'already_running') {
+                        showProgress(true);
+                        pollStatus();
+                    } else {
+                        alert('Could not start: ' + res.error);
+                    }
+                });
+        }
+
+        function cancelAnalysis() {
+            fetch('/api/cancel_analysis', { method: 'POST' })
+                .then(() => {
+                    document.getElementById('statusText').textContent = 'Cancelling...';
+                });
+        }
+
+        function checkStatus() {
+            fetch('/api/analysis_status')
+                .then(r => r.json())
+                .then(state => {
+                    if (state.running) {
+                        showProgress(true);
+                        pollStatus();
+                    }
+                });
+        }
+
+        function pollStatus() {
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(() => {
+                fetch('/api/analysis_status')
+                    .then(r => r.json())
+                    .then(state => {
+                        if (!state.running) {
+                            clearInterval(pollInterval);
+                            showProgress(false);
+                            if (state.status === 'Analysis Complete!' || state.status === 'Complete') {
+                                loadData(); // Reload visualization
+                            } else if (state.error) {
+                                alert('Analysis failed: ' + state.error);
+                            }
+                        } else {
+                            // Update UI
+                            const pct = Math.round((state.current / state.total) * 100) || 0;
+                            document.getElementById('progressFill').style.width = pct + '%';
+                            document.getElementById('statusText').textContent = state.status;
+                        }
+                    });
+            }, 1000);
+        }
+
+        function showProgress(show) {
+            const el = document.getElementById('progressOverlay');
+            if (show) el.classList.remove('hidden');
+            else el.classList.add('hidden');
+        }
+
+        // --- Visualization Logic ---
+
+        function renderGalaxy(data) {
+            const nodes = data.nodes;
+
+            // Prepare Plotly traces
+            // We group by cluster to allow toggling legend items
+            const traces = [];
+            const clusters = {}; // id -> {x:[], y:[], text:[]}
+
+            const clusterInfo = data.clusters || {};
+
+            nodes.forEach(node => {
+                const c = node.cluster;
+                if (!clusters[c]) clusters[c] = { x: [], y: [], text: [], sizes: [] };
+
+                clusters[c].x.push(node.x);
+                clusters[c].y.push(node.y);
+                clusters[c].text.push(`${node.id} (${node.count})`);
+                // Size by log count, min 5 max 20
+                const size = Math.max(5, Math.min(25, Math.log(node.count + 1) * 3));
+                clusters[c].sizes.push(size);
+            });
+
+            // Color palette
+            const colors = [
+                '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+                '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+            ];
+
+            Object.keys(clusters).forEach((cId, idx) => {
+                const group = clusters[cId];
+                const info = clusterInfo[cId] || { label: 'Cluster ' + cId };
+
+                traces.push({
+                    x: group.x,
+                    y: group.y,
+                    mode: 'markers',
+                    type: 'scattergl', // Use WebGL for performance
+                    name: info.label,
+                    text: group.text,
+                    hoverinfo: 'text',
+                    marker: {
+                        size: group.sizes,
+                        color: colors[idx % colors.length],
+                        opacity: 0.7,
+                        line: { width: 1, color: 'white' }
+                    },
+                    // Custom data for click handler (stores cluster ID)
+                    customdata: Array(group.x.length).fill(cId)
+                });
+            });
+
+            const layout = {
+                hovermode: 'closest',
+                dragmode: 'pan',
+                showlegend: true,
+                margin: { t: 20, b: 20, l: 20, r: 20 },
+                xaxis: { showgrid: false, zeroline: false, showticklabels: false },
+                yaxis: { showgrid: false, zeroline: false, showticklabels: false },
+                legend: { x: 0, y: 1 }
+            };
+
+            const config = {
+                responsive: true,
+                scrollZoom: true,  // ERROR 1 FIX: Enable scroll zoom
+                displayModeBar: true,
+                displaylogo: false
+            };
+
+            Plotly.newPlot('galaxyPlot', traces, layout, config);
+
+            // Handle clicks
+            const plot = document.getElementById('galaxyPlot');
+            plot.on('plotly_click', function (data) {
+                const pt = data.points[0];
+                // Extract tag name from text "tagname (count)"
+                const tag = pt.text.split(' (')[0];
+                // Open gallery filtered by this tag
+                window.open('/?q=' + encodeURIComponent(tag) + '&t=tag', '_blank');
+            });
+        }
+
+        function highlightCluster(cId) {
+            // ERROR 2 FIX: Highlight clicked cluster
+            const plot = document.getElementById('galaxyPlot');
+            if (!plot.data) return;
+
+            const update = {
+                'marker.opacity': plot.data.map((trace, i) => {
+                    // Match trace index to cluster ID logic relies on consistent ordering or name
+                    // Since we built traces from keys, check customdata or name
+                    // Easier: check our cluster loop index offset
+                    // Note: This relies on Object.keys order matching traces. 
+                    // Better: check if trace logic matches cId?
+                    // Actually, traces are created in loop.
+                    // We need to know which trace corresponds to cId.
+                    // Let's assume user clicks from list which iterates same keys.
+
+                    // Robust way: check trace.name against cluster label?
+                    // Or re-render? No, restyle is faster.
+
+                    // Simple hack: dim all, highlight target opacity 1.0
+                    // BUT we don't have trace ID.
+                    // Let's rely on name/label matching?
+                    // Or just use the sidebar index?
+                    return (trace.name.includes(cId) || trace.customdata?.[0] == cId) ? 0.9 : 0.1;
+                })
+            };
+
+            Plotly.restyle('galaxyPlot', update);
+
+            // Highlight sidebar item
+            document.querySelectorAll('.cluster-item').forEach(el => el.classList.remove('active'));
+            const activeItem = document.getElementById('cluster-item-' + cId);
+            if (activeItem) activeItem.classList.add('active');
+        }
+
+        function renderClusters(data) {
+            const container = document.getElementById('clusterList');
+            container.innerHTML = '';
+
+            const clusterInfo = data.clusters || {};
+
+            // Sort by count desc
+            const sortedIds = Object.keys(clusterInfo).sort((a, b) => clusterInfo[b].count - clusterInfo[a].count);
+
+            sortedIds.forEach(cId => {
+                const info = clusterInfo[cId];
+                const div = document.createElement('div');
+                div.className = 'cluster-item';
+                div.id = 'cluster-item-' + cId; // For highlighting
+                div.innerHTML = `
+                <span class="cluster-name">🏷️ ${info.label}</span>
+                <span class="cluster-count">${info.count} items</span>
+            `;
+                div.onclick = () => {
+                    highlightCluster(cId);
+                };
+                container.appendChild(div);
+            });
+        }
+
+        function renderTopicGrid(data) {
+            const container = document.getElementById('topicGrid');
+            container.innerHTML = '';
+
+            const clusterInfo = data.clusters || {};
+            const nodes = data.nodes;
+
+            // Group nodes by cluster
+            const clusters = {};
+            nodes.forEach(n => {
+                if (!clusters[n.cluster]) clusters[n.cluster] = [];
+                clusters[n.cluster].push(n);
+            });
+
+            // Sort clusters by size
+            const sortedIds = Object.keys(clusterInfo).sort((a, b) => clusterInfo[b].count - clusterInfo[a].count);
+
+            sortedIds.forEach(cId => {
+                const info = clusterInfo[cId];
+                const items = clusters[cId] || [];
+
+                // Sort items in cluster by count
+                items.sort((a, b) => b.count - a.count);
+                const topItems = items.slice(0, 20); // Top 20 tags
+
+                const card = document.createElement('div');
+                card.style.background = 'white';
+                card.style.padding = '20px';
+                card.style.borderRadius = '8px';
+                card.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)';
+
+                let tagsHtml = topItems.map(t =>
+                    `<a href="/?q=${encodeURIComponent(t.id)}&t=tag" target="_blank" style="display:inline-block; margin:2px; padding:2px 8px; background:#eee; border-radius:12px; color:#333; text-decoration:none; font-size:12px;">${t.id} <span style="color:#999; font-size:10px;">${t.count}</span></a>`
+                ).join('');
+
+                if (items.length > 20) tagsHtml += `<div style="color:#999; font-size:12px; margin-top:5px;">+ ${items.length - 20} more...</div>`;
+
+                card.innerHTML = `
+                    <h3 style="margin:0 0 15px 0; font-size:16px;">${info.label} <span style="font-weight:normal; color:#999; font-size:14px;">(${info.count})</span></h3>
+                    <div>${tagsHtml}</div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+
+            if (tab === 'galaxy') {
+                document.getElementById('vizContainer').classList.remove('hidden');
+                document.getElementById('topicSidebar').classList.remove('hidden');
+                document.getElementById('topicView').classList.add('hidden');
+
+                // Plotly resize needed when unhiding
+                Plotly.Plots.resize('galaxyPlot');
+
+            } else if (tab === 'topics') {
+                // ERROR 3 FIX: Implement Topic View switching
+                document.getElementById('vizContainer').classList.add('hidden');
+                document.getElementById('topicSidebar').classList.add('hidden');
+                document.getElementById('topicView').classList.remove('hidden');
+            }
+        }
+    </script>
+
+</body>
+
+</html>

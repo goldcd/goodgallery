@@ -112,6 +112,11 @@ def get_ai_tagger():
 
 # --- WEB ROUTES ---
 
+@app.route('/cloud')
+def cloud_page():
+    """Tag Cloud visualization page"""
+    return render_template('cloud.html', app_title=config['gallery'].get('title', 'GoodGallery'))
+
 @app.route('/')
 def index():
     """Main gallery page"""
@@ -596,6 +601,19 @@ tagging_state = {
 tagging_lock = threading.Lock()
 tagging_thread = None
 
+# Analysis state
+analysis_lock = threading.Lock()
+analysis_state = {
+    'running': False,
+    'current': 0,
+    'total': 0,
+    'status': 'Idle',
+    'error': None,
+    'cancel_requested': False,
+    'start_time': None
+}
+analysis_thread = None
+
 
 @app.route('/api/start_tagging', methods=['POST'])
 def api_start_tagging():
@@ -658,6 +676,71 @@ def api_cancel_tagging():
             return jsonify({'status': 'cancelling'})
         else:
             return jsonify({'status': 'not_running'})
+
+
+@app.route('/api/start_analysis', methods=['POST'])
+def api_start_analysis():
+    """Start tag analysis process"""
+    global analysis_thread
+    import time
+    
+    with analysis_lock:
+        if analysis_state['running']:
+            return jsonify({'status': 'already_running'})
+        
+        # Reset state
+        analysis_state['running'] = True
+        analysis_state['current'] = 0
+        analysis_state['total'] = 100
+        analysis_state['status'] = 'Starting...'
+        analysis_state['error'] = None
+        analysis_state['cancel_requested'] = False
+        analysis_state['start_time'] = time.time()
+    
+    # Start analysis in background
+    analysis_thread = threading.Thread(target=manual_analysis_worker, daemon=True)
+    analysis_thread.start()
+    
+    return jsonify({'status': 'started'})
+
+
+@app.route('/api/analysis_status')
+def api_analysis_status():
+    """Get current analysis progress"""
+    with analysis_lock:
+        return jsonify({
+            'running': analysis_state['running'],
+            'current': analysis_state['current'],
+            'total': analysis_state['total'],
+            'status': analysis_state['status'],
+            'error': analysis_state['error']
+        })
+
+
+@app.route('/api/cancel_analysis', methods=['POST'])
+def api_cancel_analysis():
+    """Cancel ongoing analysis"""
+    with analysis_lock:
+        if analysis_state['running']:
+            analysis_state['cancel_requested'] = True
+            return jsonify({'status': 'cancelling'})
+        else:
+            return jsonify({'status': 'not_running'})
+
+
+@app.route('/api/tag_data')
+def api_tag_data():
+    """Serve the generated tag analysis JSON"""
+    output_path = os.path.join(ROOT_DIR, 'data', 'tag_analysis.json')
+    if not os.path.exists(output_path):
+        return jsonify({'error': 'Analysis not run yet'}), 404
+        
+    try:
+        with open(output_path, 'r') as f:
+            data = json.load(f)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': f'Failed to load data: {str(e)}'}), 500
 
 
 @app.route('/api/gpu_status')
@@ -911,6 +994,109 @@ def manual_tagging_worker():
             tagging_state['running'] = False
             tagging_state['error'] = str(e)
             tagging_state['status'] = 'Error occurred'
+
+
+def manual_analysis_worker():
+    """
+    Background worker for tag analysis using subprocess.
+    """
+    import tempfile
+    import subprocess
+    import time
+    
+    try:
+        db_path = os.path.join(ROOT_DIR, 'data', 'gallery.db')
+        output_path = os.path.join(ROOT_DIR, 'data', 'tag_analysis.json')
+        
+        # Ensure data dir
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        
+        # Create temp files
+        config_fd, config_file = tempfile.mkstemp(suffix='.json', text=True)
+        progress_fd, progress_file = tempfile.mkstemp(suffix='.json', text=True)
+        log_fd, log_file = tempfile.mkstemp(suffix='.log', text=True)
+        
+        os.close(progress_fd)
+        os.close(log_fd)
+        
+        try:
+            # Write config
+            worker_config = {
+                'db_path': db_path,
+                'output_path': output_path,
+                'progress_file': progress_file,
+                'project_root': ROOT_DIR
+            }
+            
+            with os.fdopen(config_fd, 'w') as f:
+                json.dump(worker_config, f)
+            
+            # Spawn worker
+            worker_script = os.path.join(ROOT_DIR, 'app', 'analysis_worker.py')
+            
+            env = os.environ.copy()
+            env['PYTHONIOENCODING'] = 'utf-8'
+            
+            with open(log_file, 'w') as log_f:
+                process = subprocess.Popen(
+                    [sys.executable, worker_script, config_file],
+                    stdout=log_f,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    env=env
+                )
+                
+                # Poll loop
+                while process.poll() is None:
+                    # Check cancellation
+                    with analysis_lock:
+                        if analysis_state['cancel_requested']:
+                            process.terminate()
+                            return
+                    
+                    # Read progress
+                    try:
+                        with open(progress_file, 'r') as f:
+                            progress_data = json.load(f)
+                            with analysis_lock:
+                                analysis_state['current'] = progress_data.get('current', 0)
+                                analysis_state['status'] = progress_data.get('status', 'Processing...')
+                                analysis_state['total'] = progress_data.get('total', 100)
+                    except:
+                        pass
+                        
+                    time.sleep(0.5)
+                
+                # Check exit
+                if process.returncode != 0:
+                    with open(log_file, 'r') as f:
+                        log_content = f.read()
+                    raise Exception(f"Analysis failed: {log_content[-500:]}")
+            
+            # Complete
+            with analysis_lock:
+                if not analysis_state['cancel_requested']:
+                    analysis_state['running'] = False
+                    analysis_state['status'] = 'Analysis Complete!'
+                    analysis_state['current'] = 100
+        
+        except Exception as e:
+            with analysis_lock:
+                analysis_state['error'] = str(e)
+                analysis_state['running'] = False
+                
+        finally:
+            # Cleanup
+            for f in [config_file, progress_file, log_file]:
+                if os.path.exists(f):
+                    try:
+                        os.unlink(f)
+                    except: pass
+
+    except Exception as e:
+        with analysis_lock:
+            analysis_state['running'] = False
+            analysis_state['error'] = str(e)
 
 
 # --- RUN SERVER ---
