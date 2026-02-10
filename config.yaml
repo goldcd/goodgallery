@@ -88,14 +88,14 @@ ai:
       • Notable objects
       • Specific people or landmarks (if clearly identifiable)
       • Overall scene or activity
-      • Type of image (e.g. portrait, landscape, still life, porn, drawing, meme, cartoon, etc.)     
+      • Type of image (e.g. portrait, landscape, still life, landscape, drawing, meme, cartoon, etc.)     
     - Tag:
       • The type of image.
       • Relevant to the type of image, aligned to terms likely to be searched on for this genre.
       • Notable objects with and without descriptive adjectives.
       • Specific people or landmarks, if clearly identifiable. 
       • Overall scene or activity.
-      • Describe physical characteristics of people detected (e.g. age, gender, ethnicity, state of dress, clothing, pose, expression, freckles, bald, cleavage etc.)
+      • Describe physical characteristics of people detected (e.g. age, gender, ethnicity, clothing, pose, expression, hair, profession etc.)
     -Always output tags to describe:
       • The classification of the image type.
       • Single word identification of all people and objects detected (e.g. if "attractive woman" is detected, tag "Woman" and "Attractive" as well")
@@ -111,7 +111,7 @@ ai:
     OUTPUT FORMAT:
     Comma-separated list only.
     EXAMPLE (format only — do not reuse these tags, unless in the image):
-    Man, Red Car, City Street, Party, Attractive Woman, Birthday, Office, Cyberpunk City, Neon, Sunshine, Car, Woman, Cleavage, Child, Dog, Cat, Black Cat, Sad, Laughing, Paris, Eiffel Tower, Rishi Sunak, James Bond, Tom Cruise
+    Man, Red Car, City Street, Party, Attractive Woman, Birthday, Office, Cyberpunk City, Neon, Sunshine, Car, Woman, Child, Dog, Cat, Black Cat, Sad, Laughing, Paris, Eiffel Tower, Rishi Sunak, James Bond, Tom Cruise
     ASSISTANT:
 
 database:
