@@ -1,224 +1,221 @@
 # GoodGallery
-## v0.1.0 Alpha
 
-A standalone, zero-dependency image gallery application with AI-powered tagging using LLaVA.
+## v0.2.0 Beta
 
-**✨ Key Feature**: No installation required! Download, add photos, double-click launcher - done!
+A standalone, fully self-contained image gallery application featuring advanced AI-powered photo tagging with support for state-of-the-art Vision-Language models like **Qwen VL** and **LLaVA**.
+
+**✨ Key Feature**: Zero installation or local Python configuration required! Simply download the repository, drop your photos into the `photos/` directory, run the launcher, and start browsing.
+
+---
 
 ## Features
 
-- 📁 Browse large image collections (tested with 100k+ images)
-- 🔍 Powerful search with tag filters and boolean operators
-- 🏷️ **AI Auto-tagging** using LLaVA vision model
-- 🖼️ Automatic thumbnail generation
-- ⚡ Fast caching system
-- 🎨 Clean web interface with infinite scroll
-- 💾 SQLite database (zero configuration)
-- 🚀 **Zero Dependencies** - downloads its own Python runtime!
+- 📁 **Browse Large Image Collections**: Engineered to handle index structures and search lists for 100k+ images.
+- 🔍 **Powerful Search**: Filter by tags using a dynamic input field with support for positive matching and negative (exclude) filters.
+- 🏷️ **AI Auto-Tagging**: Powered by **Qwen3-VL** (default) or **LLaVA** models using the Hugging Face Transformers pipeline.
+- ⚡ **Asynchronous Background Processing**: Automatic tagging is run in a separate thread/subprocess so your web interface never blocks.
+- 💾 **SQLite Storage & Caching**: Fast local tag database and aggressive thumbnail caching for stutter-free scrolling.
+- 🔄 **Real-Time Directory Monitoring**: Watches the `photos/` directory to instantly detect file additions, modifications, and deletions.
+- 🎨 **Modern Web Interface**: Intuitive UI with infinite scroll, tag filters, tag-cloud visualization, and a dark/responsive layout.
+- 📈 **Tag Analytics & Cloud**: Visualize metadata distributions and view a tag-cloud page (`/cloud`).
+- 📥 **CSV Metadata Export**: Export all or filtered images and their corresponding tags directly to CSV.
+- 🚀 **Zero Dependencies**: Portable runtime scripts automatically download a standalone Python environment and configure platform-specific PyTorch (including CUDA 12.1 for NVIDIA GPUs and MPS for Apple Silicon).
+
+---
 
 ## Quick Start
 
 ### 1. Download
-
+Clone the repository to your local machine:
 ```bash
 git clone <your-repo-url>
 cd GoodGallery
 ```
 
 ### 2. Add Photos
-
-Drop your photos into the `photos/` directory:
-
+Place your images (JPEG, PNG, GIF, WebP) into the `photos/` directory:
 ```bash
 # Windows
 copy C:\MyPhotos\*.jpg photos\
 
-# Unix/Mac
+# macOS/Linux
 cp ~/Pictures/*.jpg photos/
 ```
 
 ### 3. Launch
+The launcher scripts automatically manage environment setup, dependencies, and model downloading.
 
-**Windows:**
-```bash
+**On Windows:**
+Double-click or run `launcher.bat` in your terminal:
+```cmd
 launcher.bat
 ```
 
-**Unix/Mac:**
+**On macOS / Linux:**
+Provide executable permissions and run `launcher.sh`:
 ```bash
 chmod +x launcher.sh
 ./launcher.sh
 ```
 
-### 4. Browse!
+### 4. Browse & Auto-Tag
+On the first run, the launcher will:
+- ✓ Download a sandboxed Python 3.11.9 runtime (~30MB)
+- ✓ Initialize a local Python environment and configure site-packages
+- ✓ Detect your operating system and install platform-specific PyTorch (with CUDA 12.1 on Windows or native MPS/CPU builds on macOS/Linux)
+- ✓ Install remaining dependencies (`transformers`, `Pillow`, `qwen-vl-utils`, etc.)
+- ✓ Download the configured AI vision model (default: ~4.5GB Qwen3-VL model)
+- ✓ Start scanning and tagging images in the background while launching the web server at http://localhost:5000
 
-The launcher will automatically:
-- ✓ Download portable Python (~30MB, one-time)
-- ✓ Create virtual environment
-- ✓ Install dependencies
-- ✓ Download LLaVA AI model (~4GB, one-time)
-- ✓ Start tagging your photos
-- ✓ Launch web server at http://localhost:5000
+On subsequent launches, the application starts up instantly!
 
-On subsequent runs, everything starts instantly!
+---
 
 ## What Makes This Different?
 
-**Zero Dependencies**: Unlike other galleries, GoodGallery doesn't require you to have Python installed. The launcher downloads its own portable Python runtime on first run. The entire application is self-contained in one folder.
+### Portable Sandboxed Runtime
+GoodGallery packages itself with zero local environment requirements. By leveraging `python-build-standalone` on macOS/Linux and native embedded Python on Windows, the application keeps itself entirely isolated within its folder. You can copy the entire `GoodGallery` folder onto an external drive or a network share, and it remains functional.
 
-**Truly Portable**: Copy the entire `GoodGallery` folder anywhere - different computer, USB drive, network share - it just works!
+### State-of-the-Art Vision AI
+Unlike legacy galleries that rely on simple object detection, GoodGallery supports **Qwen3-VL** and **Qwen2.5-VL** models alongside **LLaVA 1.5**. These models understand complex contexts, actions, facial expressions, styles, and activities.
 
-**AI-Powered**: Uses Meta's LLaVA vision model to automatically understand and tag your photos with descriptive keywords.
+### GPU Memory-Safe Design
+To prevent "CUDA Out of Memory" (OOM) errors common in vision language models:
+- **Resolution Limiting**: Qwen-VL processes high-resolution (e.g. 4K) images into thousands of visual tokens, causing massive VRAM spikes. GoodGallery automatically downsizes images to a maximum dimension of `1024px` before sending them to the AI, maintaining tagging precision while reducing VRAM usage under 8-9GB.
+- **Aggressive VRAM Cleanup**: Once tagging operations complete, the system fully unloads the model weights and calls PyTorch's garbage collector (`torch.cuda.empty_cache()` and `torch.cuda.ipc_collect()`) to return GPU VRAM back to your system.
 
-## AI Tagging
-
-GoodGallery uses **LLaVA 1.5** to automatically tag your images with descriptive keywords.
-
-### Requirements
-
-- **GPU recommended**: NVIDIA GPU with 6GB+ VRAM for fast tagging
-- **CPU works**: Slower but functional (expect 10-30s per image)
-
-### How It Works
-
-Auto-tagging is enabled by default in `config.yaml`. When you start the app:
-
-1. Server starts at http://localhost:5000
-2. AI scanner finds untagged images in `photos/`
-3. LLaVA analyzes each image and generates tags
-4. Tags are saved to the database
-5. Search your photos by tags!
-
-### Example Tags
-
-```
-"beach photo" → beach, ocean, sunset, sand, summer, vacation
-"family dinner" → people, dining, food, indoor, evening, gathering
-"mountain landscape" → mountains, landscape, nature, trees, hiking, scenic
-```
+---
 
 ## Folder Structure
 
-After first run, your folder will look like this:
+After the first setup run, your folder hierarchy will look like this:
 
 ```
 GoodGallery/
-├── launcher.bat              # Windows: run this
-├── launcher.sh               # Unix/Mac: run this
-├── photos/                   # Put your photos here
+├── launcher.bat              # Windows: Launcher script
+├── launcher.sh               # Unix/macOS: Launcher script
+├── photos/                   # Put your photos here (monitored in real-time)
 │   └── README.txt
-├── runtime/                  # Downloaded Python (one-time)
-│   └── python-3.11.9/        # ~30MB
-├── venv/                     # Python packages (~500MB)
-├── models/                   # AI models (one-time)
-│   └── llava/                # ~4GB
-├── data/                     # Generated data
-│   ├── gallery.db           # SQLite database
-│   ├── thumbnails/          # Thumbnail cache
-│   └── cache/               # Performance cache
-├── bootstrap/               # Bootstrap scripts
-├── app/                     # Application code
-├── static/                  # Web assets
-├── config.yaml              # Your settings (auto-created)
-└── README.md               # This file
+├── runtime/                  # Self-contained portable Python (~30MB)
+│   └── python-3.11.9/
+├── models/                   # AI weights folder (local, gitignored)
+│   └── prithivMLmods_Qwen3-VL-8B-Instruct-abliterated-v2/  # (~4.5GB)
+├── data/                     # Local data storage
+│   ├── gallery.db           # SQLite database for image index & tags
+│   ├── thumbnails/          # Generated image thumbnail cache
+│   └── cache/               # Directory index cache
+├── bootstrap/                # Startup logic scripts
+│   └── launcher_core.py     # Setup, dependency solver, and model downloader
+├── app/                      # Application backend source code
+│   ├── ai_tagger.py         # AI Vision integration pipeline
+│   ├── file_monitor.py      # Watchdog real-time file scanner
+│   ├── server.py            # Flask Web API routes
+│   └── ...
+├── static/                   # Web interface CSS/JS assets
+├── config.yaml               # User configuration (automatically generated on start)
+├── config.yaml.example       # Default configuration template
+└── README.md                 # This documentation file
 ```
 
-**Total size after first run**: ~5.5GB (mostly AI model)  
-**Git tracks**: Only ~1MB of code (everything else is gitignored)
+---
 
 ## Configuration
 
-Edit `config.yaml` to customize:
+Settings can be customized by editing the `config.yaml` file:
 
 ```yaml
 gallery:
-  photo_directory: "./photos"     # Where your photos are
-  title: "Good Gallery"            # Gallery title shown in header
-  port: 5000                       # Web server port
-  thumbnail_size: 200              # Thumbnail dimensions
-  images_per_page: 100             # Pagination
+  # Path to your photo directory
+  photo_directory: "./photos"
+  
+  # Gallery Title shown in the header
+  title: "Good Gallery"
+  
+  # Web server port
+  port: 5000
+  
+  # Monitor photos directory for changes in real-time
+  watch_for_changes: true
+  
+  # Thumbnail settings
+  thumbnail_size: 200
+  images_per_page: 300
+  
+  # Allowed image extensions
+  allowed_extensions:
+    - jpg
+    - jpeg
+    - png
+    - gif
+    - webp
 
-# Note: Thumbnails are aggressively cached for performance.
-# If you change thumbnail_size, you may need to clear your browser cache
-# or change the size slightly (e.g. 201) to force a refresh.
+  # Tag UI limits
+  tag_limits:
+    dropdown: 1000      # Max tags to load in search autocomplete dropdown
+    browse: 100         # Max tags to show in the browse filter bar
+    min_count: 1        # Minimum occurrences of a tag to display in filters
 
 ai:
-  model: "llava-hf/llava-1.5-7b-hf"  # AI model
-  auto_tag: true                      # Tag on startup
-  batch_size: 15                       # Images per batch
-  use_quantization: true              # Reduce GPU memory
+  # Model selection (Options: Qwen3-VL-8B, Qwen2.5-VL-7B, LLaVA-1.5-7b)
+  model: "prithivMLmods/Qwen3-VL-8B-Instruct-abliterated-v2"
+  
+  # Auto-tag images on startup
+  auto_tag: true
+  
+  # Keep the model loaded in GPU memory (faster start, uses VRAM until app closed)
+  try_keep_loaded: false
+  
+  # Enable 4-bit quantization (Fits model in ~6GB VRAM, ~9GB with overhead)
+  use_quantization: true
+  
+  # Batch size for tagging
+  # NOTE: 1 is recommended for stability with Qwen VL to avoid VRAM overhead
+  batch_size: 1
+  
+  # Max image dimension (in pixels) for AI analysis to prevent VRAM spikes
+  max_image_size: 1024
+
+  # High-precision prompt engineering template
+  tagging_prompt: |
+    USER: <image>
+    SYSTEM:
+    You are a high-precision image annotation assistant.
+    Generate a comma-separated list of relevant tags based ONLY on what is clearly visible.
+    Rules: Tags must be 1-2 words each, no duplicates, describe image classification and elements.
+    ASSISTANT:
 ```
+
+---
 
 ## Troubleshooting
 
-### First Run Takes Forever
+### "CUDA out of memory" (GPU crashes)
+- **Lower batch size**: Set `batch_size: 1` in `config.yaml`.
+- **Verify quantization**: Ensure `use_quantization: true` is enabled in `config.yaml` to run in 4-bit.
+- **Decrease maximum resolution**: Lower the `max_image_size` parameter in `config.yaml` to `512` or `768`.
+- **Free background VRAM**: Close other GPU-intensive applications (games, video editors, other LLM local runtimes).
 
-- **Normal!** First run downloads ~4.5GB (Python + LLaVA model)
-- Subsequent runs start in seconds
-- Check internet connection and disk space
+### "First run is taking a very long time"
+This is normal behavior! On the initial launch, the system downloads:
+1. Portable Python runtime zip package (~30MB)
+2. Operating system-tailored Python environment and site packages (~500MB)
+3. Model weights and configuration config files (~4.5GB)
+Depending on your network speed, this setup might take 10-20 minutes. Subsequent starts will be nearly instantaneous.
 
-### "CUDA out of memory"
+### "Newly added photos are not appearing in the gallery"
+- Ensure `watch_for_changes: true` is configured in `config.yaml`.
+- Verify the photos are in one of the allowed formats (`.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`).
+- If you're using an external drive, double-check that the absolute path in `photo_directory` is correct and accessible.
 
-- Reduce `batch_size` in config.yaml
-- Ensure `use_quantization: true` is enabled
-- Close other GPU applications
-- CPU mode works too (just slower)
-
-### "No photos showing"
-
-- Verify photos are in `photos/` directory
-- Check supported formats: JPG, PNG, GIF, WebP
-- Look for errors in console output
-
-### Windows Antivirus Blocking
-
-- Allow `launcher.bat` and `runtime/python-3.11.9/python.exe`
-- Some antivirus software flags downloaded Python as suspicious
-
-### Unix/Mac Permission Denied
-
+### Unix/macOS "Permission Denied"
+If you get a shell error when running the launcher script, make it executable:
 ```bash
 chmod +x launcher.sh
 ./launcher.sh
 ```
 
-## Advanced Usage
-
-### Use Your Own Photo Directory
-
-Edit `config.yaml`:
-
-```yaml
-gallery:
-  photo_directory: "/absolute/path/to/photos"
-```
-
-### Disable Auto-Tagging
-
-Edit `config.yaml`:
-
-```yaml
-ai:
-  auto_tag: false
-```
-
-Then tag manually from web UI.
-
-### Run on Different Port
-
-Edit `config.yaml`:
-
-```yaml
-gallery:
-  port: 8080
-```
-
-## Credits
-
-- Built on [LLaVA 1.5](https://github.com/haotian-liu/LLaVA)
-- Uses Flask, Pillow, and PyTorch
-- Portable Python from [python-build-standalone](https://github.com/indygreg/python-build-standalone)
+---
 
 ## License
 
-MIT License - Feel free to use and modify!
+This project is licensed under the MIT License. Feel free to use, modify, and distribute it!
