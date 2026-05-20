@@ -8,7 +8,60 @@ import time
 import threading
 from pathlib import Path
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileDeletedEvent
+import platform
+
+def is_wsl():
+    return platform.system() == 'Linux' and 'microsoft' in platform.release().lower()
+
+class WSLSafeObserver(threading.Thread):
+    """
+    A lightweight mtime-based polling observer for WSL.
+    Avoids fatal memory leaks caused by inotify on drvfs mounts,
+    and avoids the CPU thrashing of watchdog's PollingObserver.
+    """
+    def __init__(self):
+        super().__init__()
+        self.photo_dir = None
+        self.event_handler = None
+        self.running = True
+        self.daemon = True
+        
+    def schedule(self, event_handler, path, recursive=False):
+        self.photo_dir = path
+        self.event_handler = event_handler
+        
+    def run(self):
+        if not self.photo_dir:
+            return
+            
+        last_mtime = 0
+        last_files = set()
+        
+        while self.running:
+            try:
+                current_mtime = os.path.getmtime(self.photo_dir)
+                if current_mtime != last_mtime:
+                    current_files = set(os.listdir(self.photo_dir))
+                    
+                    if last_mtime != 0:
+                        added = current_files - last_files
+                        removed = last_files - current_files
+                        
+                        for f in added:
+                            self.event_handler.on_created(FileCreatedEvent(os.path.join(self.photo_dir, f)))
+                        for f in removed:
+                            self.event_handler.on_deleted(FileDeletedEvent(os.path.join(self.photo_dir, f)))
+                            
+                    last_mtime = current_mtime
+                    last_files = current_files
+            except Exception:
+                pass
+                
+            time.sleep(2.0)
+            
+    def stop(self):
+        self.running = False
 
 
 class PhotoDirectoryWatcher(FileSystemEventHandler):
@@ -165,7 +218,13 @@ def start_file_watcher(photo_dir, db, thumbs, allowed_extensions):
         return None
     
     event_handler = PhotoDirectoryWatcher(photo_dir, db, thumbs, allowed_extensions)
-    observer = Observer()
+    
+    if is_wsl():
+        print("🔧 WSL detected: Using lightweight mtime polling observer")
+        observer = WSLSafeObserver()
+    else:
+        observer = Observer()
+        
     observer.schedule(event_handler, photo_dir, recursive=False)
     observer.start()
     
